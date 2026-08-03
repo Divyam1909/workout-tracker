@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Workout Tracker</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        zinc: { 850: '#202022', 900: '#18181b', 950: '#09090b' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { -webkit-tap-highlight-color: transparent; }
+        
+        /* Hide scrollbar for clean UI */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Smooth transitions */
+        .view-section { transition: opacity 0.2s ease; }
+        
+        /* PR Animation */
+        @keyframes prPulse {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.7); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 6px rgba(250, 204, 21, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); }
+        }
+        .pr-badge { animation: prPulse 2s infinite; }
+        
+        /* Drag and Drop */
+        .drag-over { border-top: 2px dashed #3b82f6 !important; opacity: 0.7; }
+        .drag-handle { cursor: grab; }
+        .drag-handle:active { cursor: grabbing; }
+        
+        /* Inputs */
+        input[type="number"]::-webkit-inner-spin-button, 
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        
+        /* Active Nav State */
+        .nav-item.active {
+            background-color: #f4f4f5;
+            color: #18181b;
+        }
+        .dark .nav-item.active {
+            background-color: #27272a;
+            color: #f4f4f5;
+        }
+    </style>
+</head>
+<body class="bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 h-screen flex flex-col md:flex-row overflow-hidden transition-colors">
+
+    <nav class="hidden md:flex w-64 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 flex-col p-4 z-10">
+        <div class="flex items-center gap-2 mb-8 px-2">
+            <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold"><i class="ph-bold ph-barbell"></i></div>
+            <h1 class="font-semibold text-lg tracking-tight">LiftLog</h1>
+        </div>
+        <div class="flex flex-col gap-1 flex-1">
+            <button onclick="App.switchView('dashboard')" class="nav-item active flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" data-view="dashboard"><i class="ph ph-squares-four text-lg"></i> Dashboard</button>
+            <button onclick="App.switchView('templates')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" data-view="templates"><i class="ph ph-clipboard-text text-lg"></i> Templates</button>
+            <button onclick="App.switchView('history')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" data-view="history"><i class="ph ph-clock-counter-clockwise text-lg"></i> History</button>
+            <button onclick="App.switchView('settings')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" data-view="settings"><i class="ph ph-gear text-lg"></i> Settings</button>
+        </div>
+        <button onclick="App.Workout.start()" class="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2 text-sm font-medium transition-colors shadow-sm mt-4">Start Empty Workout</button>
+    </nav>
+
+    <main class="flex-1 flex flex-col h-full relative overflow-hidden bg-white dark:bg-zinc-950">
+        
+        <!-- Dashboard View -->
+        <div id="view-dashboard" class="view-section h-full overflow-y-auto p-4 md:p-8 no-scrollbar w-full max-w-5xl mx-auto">
+            <h2 class="text-2xl font-bold mb-6">Dashboard</h2>
+            
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div class="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                    <div class="text-zinc-500 dark:text-zinc-400 text-xs font-medium mb-1">Total Workouts</div>
+                    <div class="text-2xl font-bold" id="stat-workouts">0</div>
+                </div>
+                <div class="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                    <div class="text-zinc-500 dark:text-zinc-400 text-xs font-medium mb-1">Total Volume</div>
+                    <div class="text-2xl font-bold" id="stat-volume">0 <span class="text-sm font-normal text-zinc-500 unit-label">kg</span></div>
+                </div>
+                <div class="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                    <div class="text-zinc-500 dark:text-zinc-400 text-xs font-medium mb-1">Avg Duration</div>
+                    <div class="text-2xl font-bold" id="stat-duration">0m</div>
+                </div>
+                <div class="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                    <div class="text-zinc-500 dark:text-zinc-400 text-xs font-medium mb-1">PRs Earned</div>
+                    <div class="text-2xl font-bold" id="stat-prs">0</div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div class="border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 bg-zinc-50 dark:bg-zinc-900/50">
+                    <h3 class="text-sm font-semibold mb-4">Volume Over Time</h3>
+                    <div class="h-64 w-full"><canvas id="chart-volume"></canvas></div>
+                </div>
+                <div class="border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 bg-zinc-50 dark:bg-zinc-900/50">
+                    <h3 class="text-sm font-semibold mb-4">Bodyweight Trend</h3>
+                    <div class="h-64 w-full"><canvas id="chart-bw"></canvas></div>
+                </div>
+            </div>
+            
+            <div class="pb-24 md:pb-0"></div> <!-- Mobile padding -->
+        </div>
+
+        <div id="view-templates" class="view-section hidden h-full overflow-y-auto p-4 md:p-8 no-scrollbar w-full max-w-3xl mx-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold">Templates</h2>
+                <button onclick="App.UI.showModal('template-modal')" class="text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-3 py-1.5 rounded-lg font-medium flex items-center gap-1"><i class="ph ph-plus"></i> New</button>
+            </div>
+            <div id="templates-list" class="flex flex-col gap-3 pb-24 md:pb-0"></div>
+        </div>
+
+        <div id="view-history" class="view-section hidden h-full overflow-y-auto p-4 md:p-8 no-scrollbar w-full max-w-3xl mx-auto">
+            <h2 class="text-2xl font-bold mb-6">History</h2>
+            <div id="history-list" class="flex flex-col gap-4 pb-24 md:pb-0"></div>
+        </div>
+
+        <div id="view-settings" class="view-section hidden h-full overflow-y-auto p-4 md:p-8 no-scrollbar w-full max-w-2xl mx-auto">
+            <h2 class="text-2xl font-bold mb-6">Settings</h2>
+            
+            <div class="flex flex-col gap-6 pb-24 md:pb-0">
+                <div class="bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5">
+                    <h3 class="font-medium mb-4 text-sm uppercase tracking-wider text-zinc-500">Preferences</h3>
+                    
+                    <div class="flex items-center justify-between py-3 border-b border-zinc-200 dark:border-zinc-800">
+                        <div>
+                            <div class="font-medium">Weight Unit</div>
+                            <div class="text-xs text-zinc-500">Kilograms (kg) or Pounds (lbs)</div>
+                        </div>
+                        <select id="setting-unit" onchange="App.Settings.update('unit', this.value)" class="bg-transparent border border-zinc-300 dark:border-zinc-700 rounded-md p-1.5 text-sm outline-none focus:border-blue-500">
+                            <option value="kg">kg</option>
+                            <option value="lb">lb</option>
+                        </select>
+                    </div>
+
+                    <div class="flex items-center justify-between py-3">
+                        <div>
+                            <div class="font-medium">Theme</div>
+                            <div class="text-xs text-zinc-500">Light, Dark, or System</div>
+                        </div>
+                        <select id="setting-theme" onchange="App.Settings.update('theme', this.value)" class="bg-transparent border border-zinc-300 dark:border-zinc-700 rounded-md p-1.5 text-sm outline-none focus:border-blue-500">
+                            <option value="system">System</option>
+                            <option value="dark">Dark</option>
+                            <option value="light">Light</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl p-5">
+                    <h3 class="font-medium mb-4 text-sm uppercase tracking-wider text-zinc-500">Data Management</h3>
+                    <div class="flex gap-3">
+                        <button onclick="App.Settings.exportData()" class="flex-1 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 py-2 rounded-lg text-sm font-medium transition-colors">Export JSON</button>
+                        <button onclick="document.getElementById('import-file').click()" class="flex-1 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 py-2 rounded-lg text-sm font-medium transition-colors">Import Data</button>
+                        <input type="file" id="import-file" class="hidden" accept=".json" onchange="App.Settings.importData(event)">
+                    </div>
+                    <button onclick="App.Settings.clearData()" class="w-full mt-3 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 py-2 rounded-lg text-sm font-medium transition-colors border border-transparent hover:border-red-200 dark:hover:border-red-800">Wipe All Data</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-workout" class="view-section hidden h-full flex-col relative z-20 bg-zinc-50 dark:bg-zinc-950">
+            <!-- Workout Header -->
+            <header class="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm z-10 sticky top-0">
+                <div class="flex flex-col">
+                    <input type="text" id="workout-name-input" class="bg-transparent font-bold text-lg outline-none placeholder-zinc-400" placeholder="Workout Name">
+                    <div class="flex items-center gap-2 text-xs text-zinc-500 font-mono">
+                        <i class="ph ph-clock"></i> <span id="workout-timer">00:00</span>
+                    </div>
+                </div>
+                <button onclick="App.Workout.finish()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-md text-sm font-semibold transition-colors shadow-sm">Finish</button>
+            </header>
+
+            <!-- Rest Timer Floating Bar -->
+            <div id="rest-timer-bar" class="hidden bg-blue-50 dark:bg-blue-900/30 border-b border-blue-100 dark:border-blue-800/50 px-4 py-2 flex items-center justify-between text-sm sticky top-[72px] z-10 backdrop-blur-md">
+                <div class="flex items-center gap-2 text-blue-700 dark:text-blue-400 font-medium">
+                    <i class="ph-fill ph-timer"></i> Rest: <span id="rest-timer-display">00:00</span>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="App.Workout.addRestTime(30)" class="text-xs bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-300 px-2 py-1 rounded hover:bg-blue-200 dark:hover:bg-blue-700 transition">+30s</button>
+                    <button onclick="App.Workout.stopRestTimer()" class="text-xs bg-zinc-200 dark:bg-zinc-800 px-2 py-1 rounded hover:bg-zinc-300 dark:hover:bg-zinc-700 transition">Skip</button>
+                </div>
+            </div>
+
+            <!-- Workout Body -->
+            <div class="flex-1 overflow-y-auto p-4 w-full max-w-3xl mx-auto no-scrollbar pb-32">
+                <textarea id="workout-notes" class="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm resize-none mb-4 outline-none focus:border-zinc-400 shadow-sm" rows="2" placeholder="Workout notes... (e.g., Felt great today)"></textarea>
+                
+                <!-- Bodyweight input -->
+                <div class="flex items-center gap-3 mb-6 p-3 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 text-sm shadow-sm">
+                    <i class="ph ph-scales text-zinc-500"></i>
+                    <span class="flex-1">Bodyweight</span>
+                    <div class="flex flex-col items-end">
+                        <div class="flex items-center">
+                            <input type="number" id="workout-bw" class="bg-transparent border-b border-zinc-300 dark:border-zinc-700 w-16 text-right outline-none focus:border-zinc-500 font-medium" placeholder="--" oninput="App.Workout.updateBw(this.value)">
+                            <span class="text-zinc-500 unit-label ml-1 text-xs"></span>
+                        </div>
+                        <span id="bw-sec-unit" class="text-[10px] text-zinc-400 mt-0.5">--</span>
+                    </div>
+                </div>
+
+                <div id="workout-exercises" class="flex flex-col gap-6"></div>
+                
+                <button onclick="App.UI.showModal('exercise-modal')" class="w-full mt-6 py-3 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300 hover:border-zinc-400 dark:hover:border-zinc-600 transition-colors font-medium flex items-center justify-center gap-2">
+                    <i class="ph ph-plus"></i> Add Exercise
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <nav class="md:hidden border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 flex justify-around p-2 z-10 pb-safe">
+        <button onclick="App.switchView('dashboard')" class="nav-item active flex flex-col items-center p-2 rounded-lg text-zinc-500" data-view="dashboard">
+            <i class="ph ph-squares-four text-xl mb-1"></i><span class="text-[10px] font-medium">Home</span>
+        </button>
+        <button onclick="App.switchView('templates')" class="nav-item flex flex-col items-center p-2 rounded-lg text-zinc-500" data-view="templates">
+            <i class="ph ph-clipboard-text text-xl mb-1"></i><span class="text-[10px] font-medium">Routines</span>
+        </button>
+        <div class="relative -top-5">
+            <button onclick="App.Workout.start()" class="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-lg border-4 border-white dark:border-zinc-950 text-xl hover:bg-blue-700 transition-colors">
+                <i class="ph-bold ph-plus"></i>
+            </button>
+        </div>
+        <button onclick="App.switchView('history')" class="nav-item flex flex-col items-center p-2 rounded-lg text-zinc-500" data-view="history">
+            <i class="ph ph-clock-counter-clockwise text-xl mb-1"></i><span class="text-[10px] font-medium">History</span>
+        </button>
+        <button onclick="App.switchView('settings')" class="nav-item flex flex-col items-center p-2 rounded-lg text-zinc-500" data-view="settings">
+            <i class="ph ph-gear text-xl mb-1"></i><span class="text-[10px] font-medium">Settings</span>
+        </button>
+    </nav>
+
+    <div id="modal-container" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden items-center justify-center p-4 transition-opacity">
+        <!-- Exercise Selection Modal -->
+        <div id="exercise-modal" class="hidden modal-content bg-white dark:bg-zinc-900 rounded-xl w-full max-w-md flex flex-col max-h-[80vh] shadow-2xl">
+            <div class="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
+                <h3 class="font-bold">Add Exercise</h3>
+                <button onclick="App.UI.closeModal()" class="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"><i class="ph ph-x text-lg"></i></button>
+            </div>
+            <div class="p-4 border-b border-zinc-200 dark:border-zinc-800">
+                <div class="relative">
+                    <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-zinc-400"></i>
+                    <input type="text" id="exercise-search" oninput="App.UI.filterExercises(this.value)" class="w-full bg-zinc-100 dark:bg-zinc-800 border-none rounded-lg py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="Search or add custom...">
+                </div>
+            </div>
+            <div id="exercise-list" class="flex-1 overflow-y-auto p-2 no-scrollbar"></div>
+        </div>
+
+        <!-- Template Creation Modal -->
+        <div id="template-modal" class="hidden modal-content bg-white dark:bg-zinc-900 rounded-xl w-full max-w-md flex flex-col shadow-2xl">
+            <div class="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
+                <h3 class="font-bold">Save Template</h3>
+                <button onclick="App.UI.closeModal()" class="text-zinc-500"><i class="ph ph-x text-lg"></i></button>
+            </div>
+            <div class="p-4">
+                <input type="text" id="template-name" class="w-full bg-zinc-100 dark:bg-zinc-800 border-none rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500 mb-4" placeholder="Template Name (e.g., Push Day)">
+                <button onclick="App.Templates.save()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg transition-colors">Save Template</button>
+            </div>
+        </div>
+        
+        <!-- Generic Message Box -->
+        <div id="msg-modal" class="hidden modal-content bg-white dark:bg-zinc-900 rounded-xl w-full max-w-sm flex flex-col shadow-2xl p-5 text-center">
+            <div id="msg-icon" class="text-3xl mb-2 text-blue-500"><i class="ph-fill ph-info"></i></div>
+            <h3 id="msg-title" class="font-bold text-lg mb-1">Message</h3>
+            <p id="msg-body" class="text-sm text-zinc-500 mb-5">Details here.</p>
+            <button onclick="App.UI.closeModal()" class="w-full bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 font-medium py-2 rounded-lg transition-colors">OK</button>
+        </div>
+    </div>
+
+    <script>
+        // Exercise DB
+        const DB_EXERCISES = [
+            "Bench Press (Barbell)", "Squat (Barbell)", "Deadlift (Barbell)", "Overhead Press (Dumbbell)",
+            "Pull Up", "Lat Pulldown (Cable)", "Barbell Row", "Leg Press (Machine)", "Leg Extension (Machine)", 
+            "Leg Curl (Machine)", "Bicep Curl (Dumbbell)", "Tricep Extension (Cable)", "Lateral Raise (Dumbbell)", 
+            "Romanian Deadlift", "Incline Bench Press (Dumbbell)", "Bulgarian Split Squat", "Calf Raise (Machine)", 
+            "Face Pull (Cable)", "Chest Fly (Machine)", "Hack Squat (Machine)", "Seated Row (Cable)"
+        ].sort();
+
+        // Main App Object
+        const App = {
+            data: {
+                workouts: [],
+                templates: [],
+                prs: {},
+                settings: { unit: 'kg', theme: 'system' },
+                activeWorkout: null
+            },
+            state: {
+                currentView: 'dashboard',
+                timerInterval: null,
+                restTimerInterval: null,
+                restTimeRemaining: 0,
+                charts: {},
+                draggedExIndex: null
+            },
+
+            init() {
+                this.loadData();
+                this.applyTheme();
+                this.UI.updateUnitLabels();
+                
+                // Set up periodic autosave if workout active
+                setInterval(() => { if(this.data.activeWorkout) this.saveData(); }, 30000);
+                
+                if (this.data.activeWorkout) {
+                    this.switchView('workout');
+                    this.Workout.renderActive();
+                    this.Workout.resumeTimer();
+                } else {
+                    this.switchView('dashboard');
+                }
+            },
+
+            generateId: () => Math.random().toString(36).substr(2, 9),
+
+            escapeHtml(str) {
+                if (str === null || str === undefined) return '';
+                return String(str).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+            },
+
+            loadData() {
+                const stored = localStorage.getItem('lift_data');
+                if (stored) {
+                    try {
+                        const parsed = JSON.parse(stored);
+                        this.data = { ...this.data, ...parsed };
+                        if (!this.data.prs) this.data.prs = {};
+                    } catch(e) { console.error("Load fail", e); }
+                }
+            },
+
+            saveData() {
+                localStorage.setItem('lift_data', JSON.stringify(this.data));
+            },
+
+            applyTheme() {
+                const isDark = this.data.settings.theme === 'dark' || (this.data.settings.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                document.documentElement.classList.toggle('dark', isDark);
+            },
+            
+            getSecondaryUnitVal(val) {
+                if (!val) return '--';
+                const v = parseFloat(val);
+                if (isNaN(v)) return '--';
+                const isKg = this.data.settings.unit === 'kg';
+                return isKg ? `${(v * 2.20462).toFixed(1)} lbs` : `${(v / 2.20462).toFixed(1)} kg`;
+            },
+            
+            calcE1RM(weight, reps) {
+                if (!weight || !reps) return 0;
+                return parseFloat(weight) * (1 + parseInt(reps)/30);
+            },
+
+            switchView(viewId) {
+                if (viewId !== 'workout' && this.data.activeWorkout) {
+                    this.UI.showMessage("Workout in Progress", "Please finish or discard your current workout first.");
+                    return;
+                }
+                
+                document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
+                document.getElementById(`view-${viewId}`).classList.remove('hidden');
+                
+                document.querySelectorAll('.nav-item').forEach(el => {
+                    if (el.dataset.view === viewId) el.classList.add('active');
+                    else el.classList.remove('active');
+                });
+                
+                this.state.currentView = viewId;
+                
+                if (viewId === 'dashboard') this.Dashboard.render();
+                if (viewId === 'templates') this.Templates.render();
+                if (viewId === 'history') this.History.render();
+                if (viewId === 'settings') {
+                    document.getElementById('setting-unit').value = this.data.settings.unit;
+                    document.getElementById('setting-theme').value = this.data.settings.theme;
+                }
+            },
+
+            Workout: {
+                start(templateId = null) {
+                    let name = "New Workout";
+                    let exercises = [];
+                    
+                    if (templateId) {
+                        const t = App.data.templates.find(x => x.id === templateId);
+                        if (t) {
+                            name = t.name;
+                            const past = App.data.workouts.filter(w => w.templateId === templateId).sort((a,b) => b.endTime - a.endTime);
+                            if (past.length > 0) {
+                                // Preload from most recent session of this template
+                                exercises = past[0].exercises.map(e => ({
+                                    id: App.generateId(),
+                                    name: e.name,
+                                    notes: e.notes || '',
+                                    sets: e.sets.filter(s => s.completed).map(s => ({
+                                        id: App.generateId(),
+                                        weight: s.weight,
+                                        reps: s.reps,
+                                        type: s.type || 'N',
+                                        completed: false,
+                                        prevStr: `${s.weight}${App.data.settings.unit} x ${s.reps}`
+                                    }))
+                                }));
+                                exercises.forEach(e => {
+                                    if(e.sets.length === 0) e.sets.push({ id: App.generateId(), weight: '', reps: '', type: 'N', completed: false });
+                                });
+                            } else {
+                                exercises = t.exercises.map(ex => ({
+                                    id: App.generateId(), name: ex, notes: '', sets: [{ id: App.generateId(), weight: '', reps: '', type: 'N', completed: false }]
+                                }));
+                            }
+                        }
+                    }
+
+                    App.data.activeWorkout = {
+                        id: App.generateId(),
+                        templateId: templateId,
+                        name: name,
+                        startTime: Date.now(),
+                        bodyweight: '',
+                        notes: '',
+                        exercises: exercises
+                    };
+                    
+                    App.saveData();
+                    App.UI.updateUnitLabels();
+                    App.switchView('workout');
+                    this.renderActive();
+                    this.startTimer();
+                },
+
+                finish() {
+                    const w = App.data.activeWorkout;
+                    if (!w) return;
+                    
+                    // Filter empty exercises
+                    w.exercises = w.exercises.filter(e => e.sets.some(s => s.completed));
+                    if (w.exercises.length === 0 && !w.bodyweight && !w.notes) {
+                        // Discard empty workout
+                        App.data.activeWorkout = null;
+                        this.stopTimer();
+                        this.stopRestTimer();
+                        App.saveData();
+                        App.switchView('dashboard');
+                        return;
+                    }
+
+                    w.endTime = Date.now();
+                    App.data.workouts.push(w);
+                    
+                    // Check for new Template save
+                    if (!w.templateId && w.exercises.length > 0) {
+                        setTimeout(() => {
+                            document.getElementById('template-name').value = w.name;
+                            App.UI.showModal('template-modal');
+                        }, 500);
+                    }
+
+                    App.data.activeWorkout = null;
+                    this.stopTimer();
+                    this.stopRestTimer();
+                    App.saveData();
+                    App.switchView('dashboard');
+                },
+
+                getBestSet(exName) {
+                    const past = App.data.workouts.sort((a,b) => b.endTime - a.endTime);
+                    for(let w of past) {
+                        const found = w.exercises.find(e => e.name === exName);
+                        if(found && found.sets.length > 0) {
+                            const best = found.sets.filter(s=>s.completed).sort((a,b) => App.calcE1RM(b.weight, b.reps) - App.calcE1RM(a.weight, a.reps))[0];
+                            if(best) return best;
+                        }
+                    }
+                    return null;
+                },
+
+                renderActive() {
+                    const w = App.data.activeWorkout;
+                    if(!w) return;
+
+                    document.getElementById('workout-name-input').value = w.name;
+                    document.getElementById('workout-notes').value = w.notes;
+                    document.getElementById('workout-bw').value = w.bodyweight;
+                    document.getElementById('bw-sec-unit').textContent = App.getSecondaryUnitVal(w.bodyweight);
+
+                    const container = document.getElementById('workout-exercises');
+                    container.innerHTML = '';
+
+                    w.exercises.forEach((ex, exIndex) => {
+                        const exEl = document.createElement('div');
+                        exEl.className = "flex flex-col gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 shadow-sm";
+                        
+                        // Drag handlers
+                        exEl.draggable = true;
+                        exEl.ondragstart = (e) => App.Workout.dragStart(e, exIndex);
+                        exEl.ondragend = (e) => App.Workout.dragEnd(e);
+                        exEl.ondragover = (e) => App.Workout.dragOver(e, exIndex);
+                        exEl.ondragleave = (e) => App.Workout.dragLeave(e);
+                        exEl.ondrop = (e) => App.Workout.drop(e, exIndex);
+
+                        // Progressive overload suggestion
+                        let suggHtml = '';
+                        const bestSet = this.getBestSet(ex.name);
+                        if (bestSet) {
+                            const inc = App.data.settings.unit === 'kg' ? 2.5 : 5;
+                            const suggW = parseFloat(bestSet.weight) + inc;
+                            const suggR = Math.max(1, bestSet.reps - 2);
+                            suggHtml = `<div class="text-[11px] text-blue-600 dark:text-blue-400 font-medium mb-2 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded inline-block"><i class="ph ph-trend-up"></i> Last: ${bestSet.weight}${App.data.settings.unit} × ${bestSet.reps} → Try ${suggW}${App.data.settings.unit} × ${suggR}-${bestSet.reps}</div>`;
+                        }
+
+                        // PR Check
+                        let isPR = false;
+                        const prRec = App.data.prs[ex.name];
+                        ex.sets.forEach(s => {
+                            if (s.completed && (!prRec || App.calcE1RM(s.weight, s.reps) > prRec.e1rm)) isPR = true;
+                        });
+
+                        let setsHtml = '';
+                        ex.sets.forEach((set, sIdx) => {
+                            const isDone = set.completed;
+                            const bg = isDone ? 'bg-green-50 dark:bg-green-900/20' : 'bg-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800/50';
+                            
+                            let tChar = sIdx + 1;
+                            let tColor = 'text-zinc-500 bg-zinc-200 dark:bg-zinc-800';
+                            if (set.type === 'W') { tChar = 'W'; tColor = 'text-orange-600 bg-orange-100 dark:bg-orange-900/40'; }
+                            if (set.type === 'D') { tChar = 'D'; tColor = 'text-red-600 bg-red-100 dark:bg-red-900/40'; }
+
+                            setsHtml += `
+                                <div class="grid grid-cols-[32px_1fr_64px_64px_36px] items-center gap-2 py-2 px-1 rounded-md ${bg} transition-colors group">
+                                    <button class="w-7 h-7 flex items-center justify-center rounded set-type-btn ${tColor}" onclick="App.Workout.cycleType('${ex.id}', '${set.id}')">${tChar}</button>
+                                    
+                                    <div class="flex flex-col">
+                                        <span class="text-[11px] text-zinc-500 font-mono truncate">${set.prevStr || '-'}</span>
+                                        <div class="flex gap-3 mt-1 opacity-20 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onclick="App.Workout.dupSet('${ex.id}', '${set.id}')" class="text-zinc-500 hover:text-blue-500"><i class="ph ph-copy"></i></button>
+                                            <button onclick="App.Workout.rmSet('${ex.id}', '${set.id}')" class="text-zinc-500 hover:text-red-500"><i class="ph ph-trash"></i></button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="flex flex-col items-center">
+                                        <input type="number" step="0.5" class="w-full bg-zinc-100 dark:bg-zinc-800 rounded p-1.5 text-sm text-center outline-none focus:ring-1 focus:ring-zinc-400 font-medium" placeholder="0" value="${set.weight}" onchange="App.Workout.updateSet('${ex.id}', '${set.id}', 'weight', this.value)" oninput="document.getElementById('sec-${set.id}').textContent = App.getSecondaryUnitVal(this.value)">
+                                        <span id="sec-${set.id}" class="text-[9px] text-zinc-400 mt-0.5">${App.getSecondaryUnitVal(set.weight)}</span>
+                                    </div>
+                                    
+                                    <div class="flex flex-col items-center h-full justify-start">
+                                        <input type="number" class="w-full bg-zinc-100 dark:bg-zinc-800 rounded p-1.5 text-sm text-center outline-none focus:ring-1 focus:ring-zinc-400 font-medium" placeholder="0" value="${set.reps}" onchange="App.Workout.updateSet('${ex.id}', '${set.id}', 'reps', this.value)">
+                                    </div>
+                                    
+                                    <div class="flex justify-end h-full items-start pt-1">
+                                        <button class="w-7 h-7 flex items-center justify-center rounded-md ${isDone ? 'bg-green-500 text-white shadow-sm' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-500'} transition-colors" onclick="App.Workout.toggleSet('${ex.id}', '${set.id}', '${ex.name}')">
+                                            <i class="ph ph-check font-bold"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                        });
+
+                        exEl.innerHTML = `
+                            <div class="flex justify-between items-center mb-1">
+                                <div class="flex items-center gap-2 drag-handle w-full py-1">
+                                    <i class="ph ph-dots-six-vertical text-zinc-400 text-lg"></i>
+                                    <h3 class="font-semibold text-sm">${App.escapeHtml(ex.name)}</h3>
+                                    ${isPR ? '<span class="pr-badge bg-yellow-400 text-yellow-900 text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase ml-1"><i class="ph-fill ph-trophy"></i> PR</span>' : ''}
+                                </div>
+                                <button class="text-zinc-400 hover:text-red-500 p-1" onclick="App.Workout.rmEx('${ex.id}')"><i class="ph ph-x"></i></button>
+                            </div>
+                            
+                            <div class="px-7 mb-2">
+                                <input type="text" class="w-full bg-transparent border-b border-zinc-100 dark:border-zinc-800/50 text-xs outline-none text-zinc-600 dark:text-zinc-400 pb-1" placeholder="Add notes..." value="${App.escapeHtml(ex.notes || '')}" onchange="App.Workout.updNotes('${ex.id}', this.value)">
+                            </div>
+                            <div class="px-7">${suggHtml}</div>
+
+                            <div class="grid grid-cols-[32px_1fr_64px_64px_36px] gap-2 px-1 text-[10px] uppercase font-semibold tracking-wider text-zinc-400 mt-1">
+                                <div class="text-center">Set</div>
+                                <div>Previous</div>
+                                <div class="text-center unit-label">${App.data.settings.unit}</div>
+                                <div class="text-center">Reps</div>
+                                <div class="text-right pr-2"><i class="ph ph-check"></i></div>
+                            </div>
+                            
+                            <div class="flex flex-col gap-1 border-l-2 border-zinc-100 dark:border-zinc-800 pl-1 ml-4">${setsHtml}</div>
+                            
+                            <div class="px-5 mt-2">
+                                <button class="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-white font-medium flex items-center gap-1 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-1.5 rounded-md" onclick="App.Workout.addSet('${ex.id}')">
+                                    <i class="ph ph-plus"></i> Add Set
+                                </button>
+                            </div>
+                        `;
+                        container.appendChild(exEl);
+                    });
+                    
+                    App.UI.updateUnitLabels();
+
+                    // Generic listeners
+                    document.getElementById('workout-name-input').onchange = (e) => { w.name = e.target.value; App.saveData(); };
+                    document.getElementById('workout-notes').onchange = (e) => { w.notes = e.target.value; App.saveData(); };
+                },
+
+                /* Set & Exercise Mutations */
+                updateBw(val) { App.data.activeWorkout.bodyweight = val; document.getElementById('bw-sec-unit').textContent = App.getSecondaryUnitVal(val); App.saveData(); },
+                updNotes(eId, val) { App.data.activeWorkout.exercises.find(e=>e.id===eId).notes = val; App.saveData(); },
+                addSet(eId) {
+                    const ex = App.data.activeWorkout.exercises.find(e=>e.id===eId);
+                    const l = ex.sets[ex.sets.length-1];
+                    ex.sets.push({ id: App.generateId(), weight: l?l.weight:'', reps: l?l.reps:'', type: l?l.type:'N', completed: false });
+                    App.saveData(); this.renderActive();
+                },
+                dupSet(eId, sId) {
+                    const ex = App.data.activeWorkout.exercises.find(e=>e.id===eId);
+                    const idx = ex.sets.findIndex(s=>s.id===sId);
+                    const s = ex.sets[idx];
+                    ex.sets.splice(idx+1, 0, { id: App.generateId(), weight: s.weight, reps: s.reps, type: s.type, prevStr: s.prevStr, completed: false });
+                    App.saveData(); this.renderActive();
+                },
+                rmSet(eId, sId) {
+                    const ex = App.data.activeWorkout.exercises.find(e=>e.id===eId);
+                    if(ex.sets.length === 1) return;
+                    ex.sets = ex.sets.filter(s=>s.id!==sId);
+                    App.saveData(); this.renderActive();
+                },
+                rmEx(eId) {
+                    App.data.activeWorkout.exercises = App.data.activeWorkout.exercises.filter(e=>e.id!==eId);
+                    App.saveData(); this.renderActive();
+                },
+                updateSet(eId, sId, f, v) {
+                    App.data.activeWorkout.exercises.find(e=>e.id===eId).sets.find(s=>s.id===sId)[f] = v;
+                    App.saveData();
+                },
+                cycleType(eId, sId) {
+                    const s = App.data.activeWorkout.exercises.find(e=>e.id===eId).sets.find(s=>s.id===sId);
+                    s.type = s.type === 'W' ? 'D' : (s.type === 'D' ? 'N' : 'W');
+                    App.saveData(); this.renderActive();
+                },
+                toggleSet(eId, sId, exName) {
+                    const s = App.data.activeWorkout.exercises.find(e=>e.id===eId).sets.find(s=>s.id===sId);
+                    s.completed = !s.completed;
+                    
+                    if (s.completed) {
+                        this.startRestTimer();
+                        if (s.weight > 0 && s.reps > 0 && s.type !== 'W') {
+                            const e1rm = App.calcE1RM(s.weight, s.reps);
+                            const pr = App.data.prs[exName];
+                            if (!pr || e1rm > pr.e1rm) {
+                                App.data.prs[exName] = { weight: s.weight, reps: s.reps, e1rm, date: Date.now() };
+                            }
+                        }
+                    }
+                    App.saveData(); this.renderActive();
+                },
+                
+                addExercise(name) {
+                    App.data.activeWorkout.exercises.push({
+                        id: App.generateId(), name: name, notes: '',
+                        sets: [{ id: App.generateId(), weight:'', reps:'', type:'N', completed:false }]
+                    });
+                    App.saveData(); this.renderActive();
+                    App.UI.closeModal();
+                },
+
+                /* Drag and Drop */
+                dragStart(e, idx) { App.state.draggedExIndex = idx; e.target.style.opacity = '0.5'; },
+                dragEnd(e) { e.target.style.opacity = '1'; document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over')); },
+                dragOver(e, idx) { e.preventDefault(); if (idx !== App.state.draggedExIndex) e.currentTarget.classList.add('drag-over'); },
+                dragLeave(e) { e.currentTarget.classList.remove('drag-over'); },
+                drop(e, idx) {
+                    e.preventDefault(); e.currentTarget.classList.remove('drag-over');
+                    const dIdx = App.state.draggedExIndex;
+                    if (dIdx === null || dIdx === idx) return;
+                    const arr = App.data.activeWorkout.exercises;
+                    const [moved] = arr.splice(dIdx, 1);
+                    arr.splice(idx, 0, moved);
+                    App.saveData(); this.renderActive();
+                },
+
+                /* Timers */
+                formatTime(ms) {
+                    const totalSec = Math.floor(ms / 1000);
+                    const h = Math.floor(totalSec / 3600);
+                    const m = Math.floor((totalSec % 3600) / 60);
+                    const s = totalSec % 60;
+                    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                },
+                startTimer() { this.resumeTimer(); },
+                resumeTimer() {
+                    if (App.state.timerInterval) clearInterval(App.state.timerInterval);
+                    const el = document.getElementById('workout-timer');
+                    App.state.timerInterval = setInterval(() => {
+                        if(App.data.activeWorkout) el.textContent = this.formatTime(Date.now() - App.data.activeWorkout.startTime);
+                    }, 1000);
+                },
+                stopTimer() { clearInterval(App.state.timerInterval); document.getElementById('workout-timer').textContent = "00:00"; },
+                
+                startRestTimer() {
+                    App.state.restTimeRemaining = 90; // Default 90s
+                    document.getElementById('rest-timer-bar').classList.remove('hidden');
+                    this.updateRestDisplay();
+                    if(App.state.restTimerInterval) clearInterval(App.state.restTimerInterval);
+                    App.state.restTimerInterval = setInterval(() => {
+                        App.state.restTimeRemaining--;
+                        this.updateRestDisplay();
+                        if(App.state.restTimeRemaining <= 0) this.stopRestTimer();
+                    }, 1000);
+                },
+                updateRestDisplay() {
+                    const m = Math.floor(App.state.restTimeRemaining / 60);
+                    const s = App.state.restTimeRemaining % 60;
+                    document.getElementById('rest-timer-display').textContent = `${m}:${s.toString().padStart(2, '0')}`;
+                },
+                addRestTime(sec) { App.state.restTimeRemaining += sec; this.updateRestDisplay(); },
+                stopRestTimer() { clearInterval(App.state.restTimerInterval); document.getElementById('rest-timer-bar').classList.add('hidden'); }
+            },
+
+            Dashboard: {
+                render() {
+                    const w = App.data.workouts;
+                    document.getElementById('stat-workouts').textContent = w.length;
+                    
+                    let vol = 0;
+                    let time = 0;
+                    w.forEach(work => {
+                        if(work.endTime) time += (work.endTime - work.startTime);
+                        work.exercises.forEach(ex => {
+                            ex.sets.forEach(s => {
+                                if(s.completed && s.weight && s.reps) vol += (parseFloat(s.weight) * parseInt(s.reps));
+                            });
+                        });
+                    });
+                    document.getElementById('stat-volume').innerHTML = `${Math.round(vol).toLocaleString()} <span class="text-sm font-normal text-zinc-500 unit-label">${App.data.settings.unit}</span>`;
+                    document.getElementById('stat-duration').textContent = w.length ? `${Math.round((time/w.length)/60000)}m` : '0m';
+                    document.getElementById('stat-prs').textContent = Object.keys(App.data.prs).length;
+
+                    this.renderCharts();
+                },
+                renderCharts() {
+                    const wSorted = [...App.data.workouts].sort((a,b) => a.startTime - b.startTime).slice(-10); // Last 10
+                    const labels = wSorted.map(w => new Date(w.startTime).toLocaleDateString(undefined, {month:'short', day:'numeric'}));
+                    
+                    const volData = wSorted.map(work => {
+                        let v = 0;
+                        work.exercises.forEach(ex => ex.sets.forEach(s => { if(s.completed) v += (s.weight * s.reps); }));
+                        return v;
+                    });
+                    
+                    const bwData = wSorted.map(work => parseFloat(work.bodyweight) || null);
+
+                    const chartConfig = {
+                        type: 'line',
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: { legend: { display: false } },
+                            scales: { 
+                                x: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 10 } } }, 
+                                y: { border: { dash: [4,4] }, ticks: { font: { family: 'Inter', size: 10 } } } 
+                            },
+                            elements: { line: { tension: 0.4, borderWidth: 2 }, point: { radius: 3 } }
+                        }
+                    };
+
+                    if(App.state.charts.vol) App.state.charts.vol.destroy();
+                    App.state.charts.vol = new Chart(document.getElementById('chart-volume'), { ...chartConfig, data: { labels, datasets: [{ data: volData, borderColor: '#3b82f6', backgroundColor: '#3b82f620', fill: true }] }});
+
+                    if(App.state.charts.bw) App.state.charts.bw.destroy();
+                    App.state.charts.bw = new Chart(document.getElementById('chart-bw'), { ...chartConfig, data: { labels, datasets: [{ data: bwData, borderColor: '#10b981', spanGaps: true }] }});
+                }
+            },
+
+            History: {
+                render() {
+                    const list = document.getElementById('history-list');
+                    const sorted = [...App.data.workouts].sort((a,b) => b.startTime - a.startTime);
+                    
+                    if (sorted.length === 0) {
+                        list.innerHTML = `<div class="text-center text-zinc-500 py-10">No workouts completed yet.</div>`;
+                        return;
+                    }
+
+                    list.innerHTML = sorted.map(w => {
+                        const date = new Date(w.startTime).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+                        let exSummary = w.exercises.map(e => {
+                            const maxW = Math.max(0, ...e.sets.filter(s=>s.completed).map(s=>parseFloat(s.weight)||0));
+                            return `<span class="text-xs text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded whitespace-nowrap">${App.escapeHtml(e.name)} ${maxW>0 ? `(${maxW}${App.data.settings.unit})` : ''}</span>`;
+                        }).join(' ');
+
+                        return `
+                            <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-sm">
+                                <div class="flex justify-between items-start mb-3">
+                                    <div>
+                                        <h3 class="font-bold text-[15px]">${App.escapeHtml(w.name)}</h3>
+                                        <div class="text-xs text-zinc-500 mt-0.5"><i class="ph ph-calendar"></i> ${date} &bull; <i class="ph ph-clock"></i> ${Math.round((w.endTime - w.startTime)/60000)}m</div>
+                                    </div>
+                                    <button class="text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 px-2 py-1 rounded text-xs font-medium transition" onclick="App.History.repeat('${w.id}')">Repeat</button>
+                                </div>
+                                <div class="flex flex-wrap gap-1.5">${exSummary || '<span class="text-xs text-zinc-400">Empty workout</span>'}</div>
+                            </div>
+                        `;
+                    }).join('');
+                },
+                repeat(workoutId) {
+                    const w = App.data.workouts.find(x => x.id === workoutId);
+                    if (!w) return;
+                    App.Workout.start(null);
+                    App.data.activeWorkout.name = w.name;
+                    App.data.activeWorkout.exercises = w.exercises.map(e => ({
+                        ...e,
+                        id: App.generateId(),
+                        sets: e.sets.map(s => ({ ...s, id: App.generateId(), completed: false }))
+                    }));
+                    App.saveData();
+                    App.Workout.renderActive();
+                }
+            },
+
+            Templates: {
+                render() {
+                    const list = document.getElementById('templates-list');
+                    if (App.data.templates.length === 0) {
+                        list.innerHTML = `<div class="text-center text-zinc-500 py-10">Create templates to quickly start routines.</div>`;
+                        return;
+                    }
+                    list.innerHTML = App.data.templates.map(t => `
+                        <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-sm flex justify-between items-center group">
+                            <div>
+                                <h3 class="font-bold text-[15px]">${App.escapeHtml(t.name)}</h3>
+                                <p class="text-xs text-zinc-500 mt-1 line-clamp-1">${App.escapeHtml(t.exercises.join(', '))}</p>
+                            </div>
+                            <button class="bg-blue-600 hover:bg-blue-700 text-white w-8 h-8 rounded-full flex items-center justify-center transition" onclick="App.Workout.start('${t.id}')"><i class="ph-bold ph-play"></i></button>
+                        </div>
+                    `).join('');
+                },
+                save() {
+                    const name = document.getElementById('template-name').value.trim() || 'New Template';
+                    const w = App.data.activeWorkout;
+                    if (w && w.exercises.length > 0) {
+                        const t = { id: App.generateId(), name: name, exercises: w.exercises.map(e => e.name) };
+                        w.templateId = t.id; // Link active workout
+                        App.data.templates.push(t);
+                        App.saveData();
+                        App.UI.closeModal();
+                        App.UI.showMessage("Success", "Template saved.");
+                    }
+                }
+            },
+
+            Settings: {
+                update(key, val) {
+                    App.data.settings[key] = val;
+                    App.saveData();
+                    if(key === 'theme') App.applyTheme();
+                    if(key === 'unit') { App.UI.updateUnitLabels(); if(App.data.activeWorkout) App.Workout.renderActive(); }
+                },
+                exportData() {
+                    const blob = new Blob([JSON.stringify(App.data, null, 2)], {type: 'application/json'});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = `liftlog-export-${new Date().toISOString().slice(0,10)}.json`;
+                    a.click(); URL.revokeObjectURL(url);
+                },
+                importData(e) {
+                    const file = e.target.files[0];
+                    if(!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        try {
+                            const parsed = JSON.parse(ev.target.result);
+                            if(parsed.workouts) {
+                                App.data = { ...App.data, ...parsed };
+                                App.saveData();
+                                App.init();
+                                App.UI.showMessage("Success", "Data imported successfully.");
+                            } else throw new Error("Invalid format");
+                        } catch(err) { App.UI.showMessage("Error", "Invalid backup file."); }
+                    };
+                    reader.readAsText(file);
+                },
+                clearData() {
+                    // Safe alternative to alert/confirm
+                    App.data = { workouts: [], templates: [], prs: {}, settings: { unit: 'kg', theme: 'system' }, activeWorkout: null };
+                    App.saveData(); App.init(); App.UI.showMessage("Cleared", "All data has been wiped.");
+                }
+            },
+
+            UI: {
+                updateUnitLabels() {
+                    document.querySelectorAll('.unit-label').forEach(el => el.textContent = App.data.settings.unit);
+                },
+                showModal(id) {
+                    document.getElementById('modal-container').classList.remove('hidden');
+                    document.getElementById('modal-container').classList.add('flex');
+                    document.querySelectorAll('.modal-content').forEach(el => el.classList.add('hidden'));
+                    document.getElementById(id).classList.remove('hidden');
+                    if (id === 'exercise-modal') {
+                        document.getElementById('exercise-search').value = '';
+                        this.filterExercises('');
+                        document.getElementById('exercise-search').focus();
+                    }
+                },
+                closeModal() {
+                    document.getElementById('modal-container').classList.add('hidden');
+                    document.getElementById('modal-container').classList.remove('flex');
+                },
+                showMessage(title, body) {
+                    document.getElementById('msg-title').textContent = title;
+                    document.getElementById('msg-body').textContent = body;
+                    this.showModal('msg-modal');
+                },
+                filterExercises(query) {
+                    const list = document.getElementById('exercise-list');
+                    const q = query.toLowerCase().trim();
+                    const trimmed = query.trim();
+                    const matches = DB_EXERCISES.filter(ex => ex.toLowerCase().includes(q));
+
+                    list.innerHTML = '';
+
+                    if (q && !matches.find(m => m.toLowerCase() === q)) {
+                        const btn = document.createElement('button');
+                        btn.className = "w-full text-left p-3 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg mb-1 flex items-center gap-2";
+                        btn.innerHTML = `<i class="ph ph-plus-circle"></i> Add Custom: "${App.escapeHtml(trimmed)}"`;
+                        btn.onclick = () => App.Workout.addExercise(trimmed);
+                        list.appendChild(btn);
+                    }
+
+                    matches.forEach(ex => {
+                        const btn = document.createElement('button');
+                        btn.className = "w-full text-left p-3 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors border-b border-zinc-100 dark:border-zinc-800/50 last:border-0";
+                        btn.textContent = ex;
+                        btn.onclick = () => App.Workout.addExercise(ex);
+                        list.appendChild(btn);
+                    });
+
+                    if (!list.hasChildNodes()) {
+                        list.innerHTML = `<div class="p-3 text-sm text-zinc-500 text-center">No matches found.</div>`;
+                    }
+                }
+            }
+        };
+
+        // Boot
+        window.onload = () => App.init();
+    </script>
+</body>
+</html>
