@@ -4,7 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Workout Tracker</title>
-    
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-180.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="LiftLog">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -71,6 +79,7 @@
         <div class="flex flex-col gap-1 flex-1">
             <button onclick="App.switchView('dashboard')" class="nav-item active flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" data-view="dashboard"><i class="ph ph-squares-four text-lg"></i> Dashboard</button>
             <button onclick="App.switchView('templates')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" data-view="templates"><i class="ph ph-clipboard-text text-lg"></i> Templates</button>
+            <button onclick="App.switchView('progress')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" data-view="progress"><i class="ph ph-chart-line-up text-lg"></i> Progress</button>
             <button onclick="App.switchView('history')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" data-view="history"><i class="ph ph-clock-counter-clockwise text-lg"></i> History</button>
             <button onclick="App.switchView('settings')" class="nav-item flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" data-view="settings"><i class="ph ph-gear text-lg"></i> Settings</button>
         </div>
@@ -82,7 +91,19 @@
         <!-- Dashboard View -->
         <div id="view-dashboard" class="view-section h-full overflow-y-auto p-4 md:p-8 no-scrollbar w-full max-w-5xl mx-auto">
             <h2 class="text-2xl font-bold mb-6">Dashboard</h2>
-            
+
+            <div id="backup-nudge" class="hidden mb-6 p-4 rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 flex items-start gap-3">
+                <i class="ph-fill ph-warning text-amber-500 text-lg mt-0.5"></i>
+                <div class="flex-1">
+                    <div class="text-sm font-medium text-amber-800 dark:text-amber-300">Back up your data</div>
+                    <div class="text-xs text-amber-700/80 dark:text-amber-400/80 mt-0.5">Your workouts are only stored on this device. Export a backup so you don't lose your history.</div>
+                    <div class="flex gap-2 mt-3">
+                        <button onclick="App.Settings.exportData()" class="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-md font-medium transition-colors">Export Now</button>
+                        <button onclick="App.Settings.dismissBackupNudge()" class="text-xs bg-transparent hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-400 px-3 py-1.5 rounded-md font-medium transition-colors">Remind me later</button>
+                    </div>
+                </div>
+            </div>
+
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                 <div class="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
                     <div class="text-zinc-500 dark:text-zinc-400 text-xs font-medium mb-1">Total Workouts</div>
@@ -127,6 +148,59 @@
         <div id="view-history" class="view-section hidden h-full overflow-y-auto p-4 md:p-8 no-scrollbar w-full max-w-3xl mx-auto">
             <h2 class="text-2xl font-bold mb-6">History</h2>
             <div id="history-list" class="flex flex-col gap-4 pb-24 md:pb-0"></div>
+        </div>
+
+        <div id="view-progress" class="view-section hidden h-full overflow-y-auto p-4 md:p-8 no-scrollbar w-full max-w-3xl mx-auto">
+            <!-- List panel -->
+            <div id="progress-list-panel">
+                <h2 class="text-2xl font-bold mb-6">Progress</h2>
+                <div class="relative mb-4">
+                    <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-zinc-400"></i>
+                    <input type="text" id="progress-search" oninput="App.Progress.renderList(this.value)" class="w-full bg-zinc-100 dark:bg-zinc-800 border-none rounded-lg py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-blue-500" placeholder="Search exercises...">
+                </div>
+                <div id="progress-list" class="flex flex-col gap-2 pb-24 md:pb-0"></div>
+            </div>
+
+            <!-- Detail panel -->
+            <div id="progress-detail-panel" class="hidden">
+                <button onclick="App.Progress.showList()" class="flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 mb-4 font-medium">
+                    <i class="ph ph-arrow-left"></i> Back
+                </button>
+                <h2 id="progress-detail-title" class="text-2xl font-bold mb-4"></h2>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                    <div class="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                        <div class="text-zinc-500 dark:text-zinc-400 text-[11px] font-medium mb-1">Best Set</div>
+                        <div class="text-base font-bold" id="progress-stat-best">--</div>
+                    </div>
+                    <div class="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                        <div class="text-zinc-500 dark:text-zinc-400 text-[11px] font-medium mb-1">Sessions</div>
+                        <div class="text-base font-bold" id="progress-stat-sessions">0</div>
+                    </div>
+                    <div class="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                        <div class="text-zinc-500 dark:text-zinc-400 text-[11px] font-medium mb-1">Total Volume</div>
+                        <div class="text-base font-bold" id="progress-stat-volume">0</div>
+                    </div>
+                    <div class="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                        <div class="text-zinc-500 dark:text-zinc-400 text-[11px] font-medium mb-1">Last Performed</div>
+                        <div class="text-base font-bold" id="progress-stat-last">--</div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div class="border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 bg-zinc-50 dark:bg-zinc-900/50">
+                        <h3 class="text-sm font-semibold mb-4">Estimated 1RM Over Time</h3>
+                        <div class="h-56 w-full"><canvas id="chart-ex-e1rm"></canvas></div>
+                    </div>
+                    <div class="border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 bg-zinc-50 dark:bg-zinc-900/50">
+                        <h3 class="text-sm font-semibold mb-4">Session Volume</h3>
+                        <div class="h-56 w-full"><canvas id="chart-ex-volume"></canvas></div>
+                    </div>
+                </div>
+
+                <h3 class="text-sm font-semibold mb-3">Session Log</h3>
+                <div id="progress-log" class="flex flex-col gap-2 pb-24 md:pb-0"></div>
+            </div>
         </div>
 
         <div id="view-settings" class="view-section hidden h-full overflow-y-auto p-4 md:p-8 no-scrollbar w-full max-w-2xl mx-auto">
@@ -229,6 +303,9 @@
         <button onclick="App.switchView('templates')" class="nav-item flex flex-col items-center p-2 rounded-lg text-zinc-500" data-view="templates">
             <i class="ph ph-clipboard-text text-xl mb-1"></i><span class="text-[10px] font-medium">Routines</span>
         </button>
+        <button onclick="App.switchView('progress')" class="nav-item flex flex-col items-center p-2 rounded-lg text-zinc-500" data-view="progress">
+            <i class="ph ph-chart-line-up text-xl mb-1"></i><span class="text-[10px] font-medium">Progress</span>
+        </button>
         <div class="relative -top-5">
             <button onclick="App.Workout.start()" class="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-lg border-4 border-white dark:border-zinc-950 text-xl hover:bg-blue-700 transition-colors">
                 <i class="ph-bold ph-plus"></i>
@@ -282,11 +359,46 @@
     <script>
         // Exercise DB
         const DB_EXERCISES = [
-            "Bench Press (Barbell)", "Squat (Barbell)", "Deadlift (Barbell)", "Overhead Press (Dumbbell)",
-            "Pull Up", "Lat Pulldown (Cable)", "Barbell Row", "Leg Press (Machine)", "Leg Extension (Machine)", 
-            "Leg Curl (Machine)", "Bicep Curl (Dumbbell)", "Tricep Extension (Cable)", "Lateral Raise (Dumbbell)", 
-            "Romanian Deadlift", "Incline Bench Press (Dumbbell)", "Bulgarian Split Squat", "Calf Raise (Machine)", 
-            "Face Pull (Cable)", "Chest Fly (Machine)", "Hack Squat (Machine)", "Seated Row (Cable)"
+            // Chest
+            "Bench Press (Barbell)", "Bench Press (Dumbbell)", "Incline Bench Press (Barbell)",
+            "Incline Bench Press (Dumbbell)", "Decline Bench Press (Barbell)", "Chest Fly (Dumbbell)",
+            "Chest Fly (Machine)", "Chest Fly (Cable)", "Cable Crossover", "Push Up", "Dip (Chest)",
+            "Pec Deck (Machine)", "Landmine Press",
+
+            // Back
+            "Deadlift (Barbell)", "Sumo Deadlift (Barbell)", "Romanian Deadlift", "Stiff-Legged Deadlift (Barbell)",
+            "Good Morning (Barbell)", "Rack Pull", "Pull Up", "Chin Up", "Lat Pulldown (Cable)",
+            "Lat Pulldown (Machine)", "Barbell Row", "Bent-Over Row (Dumbbell)", "T-Bar Row", "Pendlay Row",
+            "Seated Row (Cable)", "Seated Row (Machine)", "Chest-Supported Row (Machine)", "Hyperextension",
+            "Shrug (Barbell)", "Shrug (Dumbbell)",
+
+            // Legs
+            "Squat (Barbell)", "Front Squat (Barbell)", "Goblet Squat (Dumbbell)", "Box Squat (Barbell)",
+            "Overhead Squat (Barbell)", "Hack Squat (Machine)", "Leg Press (Machine)", "Leg Extension (Machine)",
+            "Leg Curl (Machine)", "Leg Curl (Lying)", "Leg Curl (Seated)", "Bulgarian Split Squat",
+            "Walking Lunge (Dumbbell)", "Reverse Lunge (Dumbbell)", "Step Up (Dumbbell)", "Hip Thrust (Barbell)",
+            "Glute Bridge", "Calf Raise (Machine)", "Standing Calf Raise (Machine)", "Seated Calf Raise (Machine)",
+            "Adductor Machine", "Abductor Machine", "Sissy Squat",
+
+            // Shoulders
+            "Overhead Press (Barbell)", "Overhead Press (Dumbbell)", "Arnold Press (Dumbbell)",
+            "Shoulder Press (Machine)", "Lateral Raise (Dumbbell)", "Lateral Raise (Cable)",
+            "Front Raise (Dumbbell)", "Rear Delt Fly (Dumbbell)", "Rear Delt Fly (Machine)",
+            "Upright Row (Barbell)", "Face Pull (Cable)",
+
+            // Arms
+            "Bicep Curl (Dumbbell)", "Bicep Curl (Barbell)", "Hammer Curl (Dumbbell)", "Preacher Curl (EZ Bar)",
+            "Concentration Curl (Dumbbell)", "Cable Curl", "EZ Bar Curl", "Tricep Extension (Cable)",
+            "Tricep Pushdown (Cable)", "Overhead Tricep Extension (Dumbbell)", "Skull Crusher (EZ Bar)",
+            "Close-Grip Bench Press (Barbell)", "Tricep Dip", "Wrist Curl (Dumbbell)",
+
+            // Core
+            "Plank", "Side Plank", "Sit Up", "Crunch", "Cable Crunch", "Hanging Leg Raise",
+            "Hanging Knee Raise", "Russian Twist", "Ab Wheel Rollout", "Mountain Climber", "Woodchopper (Cable)",
+
+            // Full Body / Conditioning
+            "Kettlebell Swing", "Burpee", "Farmer's Carry", "Power Clean", "Clean and Jerk", "Snatch (Barbell)",
+            "Box Jump", "Battle Ropes", "Rowing Machine", "Jump Rope", "Sled Push", "Thruster (Barbell)"
         ].sort();
 
         // Main App Object
@@ -311,10 +423,13 @@
                 this.loadData();
                 this.applyTheme();
                 this.UI.updateUnitLabels();
-                
-                // Set up periodic autosave if workout active
-                setInterval(() => { if(this.data.activeWorkout) this.saveData(); }, 30000);
-                
+                this.debouncedSave = this.debounce(() => this.saveData(), 400);
+
+                if (!this.data.settings.firstUseAt) {
+                    this.data.settings.firstUseAt = Date.now();
+                    this.saveData();
+                }
+
                 if (this.data.activeWorkout) {
                     this.switchView('workout');
                     this.Workout.renderActive();
@@ -329,6 +444,11 @@
             escapeHtml(str) {
                 if (str === null || str === undefined) return '';
                 return String(str).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+            },
+
+            debounce(fn, delay) {
+                let t;
+                return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), delay); };
             },
 
             loadData() {
@@ -382,6 +502,7 @@
                 
                 if (viewId === 'dashboard') this.Dashboard.render();
                 if (viewId === 'templates') this.Templates.render();
+                if (viewId === 'progress') this.Progress.render();
                 if (viewId === 'history') this.History.render();
                 if (viewId === 'settings') {
                     document.getElementById('setting-unit').value = this.data.settings.unit;
@@ -611,7 +732,7 @@
                 },
 
                 /* Set & Exercise Mutations */
-                updateBw(val) { App.data.activeWorkout.bodyweight = val; document.getElementById('bw-sec-unit').textContent = App.getSecondaryUnitVal(val); App.saveData(); },
+                updateBw(val) { App.data.activeWorkout.bodyweight = val; document.getElementById('bw-sec-unit').textContent = App.getSecondaryUnitVal(val); App.debouncedSave(); },
                 updNotes(eId, val) { App.data.activeWorkout.exercises.find(e=>e.id===eId).notes = val; App.saveData(); },
                 addSet(eId) {
                     const ex = App.data.activeWorkout.exercises.find(e=>e.id===eId);
@@ -727,6 +848,7 @@
 
             Dashboard: {
                 render() {
+                    App.Settings.updateBackupNudge();
                     const w = App.data.workouts;
                     document.getElementById('stat-workouts').textContent = w.length;
                     
@@ -856,6 +978,132 @@
                 }
             },
 
+            Progress: {
+                getExerciseNames() {
+                    const names = new Set();
+                    App.data.workouts.forEach(w => w.exercises.forEach(e => {
+                        if (e.sets.some(s => s.completed && s.weight && s.reps)) names.add(e.name);
+                    }));
+                    return [...names].sort();
+                },
+                // Returns one entry per session (workout) that includes this exercise,
+                // oldest first: best set, its e1RM, total volume, and all completed sets.
+                getSessions(name) {
+                    const sessions = [];
+                    [...App.data.workouts].sort((a, b) => a.startTime - b.startTime).forEach(w => {
+                        const ex = w.exercises.find(e => e.name === name);
+                        if (!ex) return;
+                        const sets = ex.sets.filter(s => s.completed && s.weight && s.reps);
+                        if (sets.length === 0) return;
+                        const best = sets.reduce((a, b) => App.calcE1RM(b.weight, b.reps) > App.calcE1RM(a.weight, a.reps) ? b : a);
+                        const volume = sets.reduce((sum, s) => sum + parseFloat(s.weight) * parseInt(s.reps), 0);
+                        sessions.push({ date: w.startTime, bestSet: best, e1rm: App.calcE1RM(best.weight, best.reps), volume, sets });
+                    });
+                    return sessions;
+                },
+                render() {
+                    this.showList();
+                    document.getElementById('progress-search').value = '';
+                    this.renderList('');
+                },
+                renderList(query) {
+                    const q = (query || '').toLowerCase().trim();
+                    const names = this.getExerciseNames().filter(n => n.toLowerCase().includes(q));
+                    const list = document.getElementById('progress-list');
+                    list.innerHTML = '';
+
+                    if (names.length === 0) {
+                        list.innerHTML = `<div class="text-center text-zinc-500 py-10">${App.data.workouts.length ? 'No matching exercises yet.' : 'Log a workout to see progress here.'}</div>`;
+                        return;
+                    }
+
+                    names.forEach(name => {
+                        const sessions = this.getSessions(name);
+                        if (sessions.length === 0) return;
+                        const best = sessions.reduce((a, b) => b.e1rm > a.e1rm ? b : a);
+                        const last = sessions[sessions.length - 1];
+
+                        const row = document.createElement('button');
+                        row.className = "w-full text-left bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-sm flex justify-between items-center hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors";
+                        row.innerHTML = `
+                            <div>
+                                <h3 class="font-semibold text-sm">${App.escapeHtml(name)}</h3>
+                                <div class="text-xs text-zinc-500 mt-1">Best: ${best.bestSet.weight}${App.data.settings.unit} × ${best.bestSet.reps} &bull; ${sessions.length} session${sessions.length > 1 ? 's' : ''}</div>
+                            </div>
+                            <div class="text-right shrink-0 pl-2">
+                                <div class="text-[10px] text-zinc-400 uppercase tracking-wide">Last</div>
+                                <div class="text-xs font-medium">${new Date(last.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</div>
+                            </div>
+                        `;
+                        row.onclick = () => App.Progress.showDetail(name);
+                        list.appendChild(row);
+                    });
+                },
+                showList() {
+                    document.getElementById('progress-detail-panel').classList.add('hidden');
+                    document.getElementById('progress-list-panel').classList.remove('hidden');
+                },
+                showDetail(name) {
+                    document.getElementById('progress-list-panel').classList.add('hidden');
+                    document.getElementById('progress-detail-panel').classList.remove('hidden');
+                    this.renderDetail(name);
+                },
+                renderDetail(name) {
+                    const sessions = this.getSessions(name);
+                    document.getElementById('progress-detail-title').textContent = name;
+                    if (sessions.length === 0) return;
+
+                    const best = sessions.reduce((a, b) => b.e1rm > a.e1rm ? b : a);
+                    const totalVolume = sessions.reduce((sum, s) => sum + s.volume, 0);
+                    const last = sessions[sessions.length - 1];
+                    const unit = App.data.settings.unit;
+
+                    document.getElementById('progress-stat-best').textContent = `${best.bestSet.weight}${unit} × ${best.bestSet.reps}`;
+                    document.getElementById('progress-stat-sessions').textContent = sessions.length;
+                    document.getElementById('progress-stat-volume').textContent = `${Math.round(totalVolume).toLocaleString()} ${unit}`;
+                    document.getElementById('progress-stat-last').textContent = new Date(last.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+
+                    const labels = sessions.map(s => new Date(s.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
+                    const e1rmData = sessions.map(s => Math.round(s.e1rm * 10) / 10);
+                    const volData = sessions.map(s => Math.round(s.volume));
+
+                    const sharedScales = {
+                        x: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 10 } } },
+                        y: { border: { dash: [4, 4] }, ticks: { font: { family: 'Inter', size: 10 } } }
+                    };
+
+                    if (App.state.charts.exE1rm) App.state.charts.exE1rm.destroy();
+                    App.state.charts.exE1rm = new Chart(document.getElementById('chart-ex-e1rm'), {
+                        type: 'line',
+                        data: { labels, datasets: [{ data: e1rmData, borderColor: '#3b82f6', backgroundColor: '#3b82f620', fill: true, tension: 0.4, borderWidth: 2, pointRadius: 3 }] },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: sharedScales }
+                    });
+
+                    if (App.state.charts.exVolume) App.state.charts.exVolume.destroy();
+                    App.state.charts.exVolume = new Chart(document.getElementById('chart-ex-volume'), {
+                        type: 'bar',
+                        data: { labels, datasets: [{ data: volData, backgroundColor: '#10b981' }] },
+                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: sharedScales }
+                    });
+
+                    const logEl = document.getElementById('progress-log');
+                    logEl.innerHTML = '';
+                    [...sessions].reverse().forEach(s => {
+                        const row = document.createElement('div');
+                        row.className = "border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 bg-white dark:bg-zinc-900";
+                        const dateStr = new Date(s.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+                        const setsStr = s.sets.map(st => `${st.weight}${unit}×${st.reps}`).join(', ');
+                        row.innerHTML = `
+                            <div class="flex justify-between items-center text-xs text-zinc-500 mb-1">
+                                <span>${dateStr}</span><span>${Math.round(s.volume).toLocaleString()} ${unit} vol</span>
+                            </div>
+                            <div class="text-sm font-medium">${setsStr}</div>
+                        `;
+                        logEl.appendChild(row);
+                    });
+                }
+            },
+
             Settings: {
                 update(key, val) {
                     App.data.settings[key] = val;
@@ -869,6 +1117,28 @@
                     const a = document.createElement('a');
                     a.href = url; a.download = `liftlog-export-${new Date().toISOString().slice(0,10)}.json`;
                     a.click(); URL.revokeObjectURL(url);
+
+                    App.data.settings.lastExportAt = Date.now();
+                    App.saveData();
+                    this.updateBackupNudge();
+                },
+                dismissBackupNudge() {
+                    App.data.settings.backupNudgeDismissedAt = Date.now();
+                    App.saveData();
+                    this.updateBackupNudge();
+                },
+                updateBackupNudge() {
+                    const banner = document.getElementById('backup-nudge');
+                    if (!banner) return;
+                    const s = App.data.settings;
+                    const DAY = 24 * 60 * 60 * 1000;
+
+                    if (App.data.workouts.length === 0) { banner.classList.add('hidden'); return; }
+
+                    const since = Date.now() - (s.lastExportAt || s.firstUseAt || Date.now());
+                    const dismissedRecently = s.backupNudgeDismissedAt && (Date.now() - s.backupNudgeDismissedAt) < 3 * DAY;
+
+                    banner.classList.toggle('hidden', !(since > 7 * DAY && !dismissedRecently));
                 },
                 importData(e) {
                     const file = e.target.files[0];
@@ -950,7 +1220,12 @@
         };
 
         // Boot
-        window.onload = () => App.init();
+        window.onload = () => {
+            App.init();
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('sw.js').catch(() => {});
+            }
+        };
     </script>
 </body>
 </html>
