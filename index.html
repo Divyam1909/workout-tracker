@@ -140,7 +140,7 @@
         <div id="view-templates" class="view-section hidden h-full overflow-y-auto p-4 md:p-8 no-scrollbar w-full max-w-3xl mx-auto">
             <div class="flex justify-between items-center mb-6">
                 <h2 class="text-2xl font-bold">Templates</h2>
-                <button onclick="App.UI.showModal('template-modal')" class="text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-3 py-1.5 rounded-lg font-medium flex items-center gap-1"><i class="ph ph-plus"></i> New</button>
+                <button onclick="App.Templates.openNew()" class="text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-3 py-1.5 rounded-lg font-medium flex items-center gap-1"><i class="ph ph-plus"></i> New</button>
             </div>
             <div id="templates-list" class="flex flex-col gap-3 pb-24 md:pb-0"></div>
         </div>
@@ -324,7 +324,7 @@
         <div id="exercise-modal" class="hidden modal-content bg-white dark:bg-zinc-900 rounded-xl w-full max-w-md flex flex-col max-h-[80vh] shadow-2xl">
             <div class="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
                 <h3 class="font-bold">Add Exercise</h3>
-                <button onclick="App.UI.closeModal()" class="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"><i class="ph ph-x text-lg"></i></button>
+                <button onclick="App.UI.closeExercisePicker()" class="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"><i class="ph ph-x text-lg"></i></button>
             </div>
             <div class="p-4 border-b border-zinc-200 dark:border-zinc-800">
                 <div class="relative">
@@ -336,13 +336,17 @@
         </div>
 
         <!-- Template Creation Modal -->
-        <div id="template-modal" class="hidden modal-content bg-white dark:bg-zinc-900 rounded-xl w-full max-w-md flex flex-col shadow-2xl">
+        <div id="template-modal" class="hidden modal-content bg-white dark:bg-zinc-900 rounded-xl w-full max-w-md flex flex-col max-h-[80vh] shadow-2xl">
             <div class="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
-                <h3 class="font-bold">Save Template</h3>
+                <h3 id="template-modal-title" class="font-bold">Save Template</h3>
                 <button onclick="App.UI.closeModal()" class="text-zinc-500"><i class="ph ph-x text-lg"></i></button>
             </div>
-            <div class="p-4">
+            <div class="p-4 overflow-y-auto no-scrollbar">
                 <input type="text" id="template-name" class="w-full bg-zinc-100 dark:bg-zinc-800 border-none rounded-lg p-3 text-sm outline-none focus:ring-2 focus:ring-blue-500 mb-4" placeholder="Template Name (e.g., Push Day)">
+                <div id="template-exercise-list" class="flex flex-col gap-2 mb-3"></div>
+                <button onclick="App.Templates.openExercisePicker()" class="w-full py-2.5 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg text-sm text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300 hover:border-zinc-400 dark:hover:border-zinc-600 transition-colors font-medium flex items-center justify-center gap-2 mb-4">
+                    <i class="ph ph-plus"></i> Add Exercise
+                </button>
                 <button onclick="App.Templates.save()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg transition-colors">Save Template</button>
             </div>
         </div>
@@ -416,7 +420,9 @@
                 restTimerInterval: null,
                 restTimeRemaining: 0,
                 charts: {},
-                draggedExIndex: null
+                draggedExIndex: null,
+                templateBuilder: [],
+                exercisePickerTarget: 'workout'
             },
 
             init() {
@@ -581,12 +587,14 @@
 
                     w.endTime = Date.now();
                     App.data.workouts.push(w);
-                    
-                    // Check for new Template save
+
+                    // Check for new Template save (capture exercise names now --
+                    // activeWorkout is cleared below, before the modal opens)
                     if (!w.templateId && w.exercises.length > 0) {
+                        const promptName = w.name;
+                        const promptExercises = w.exercises.map(e => e.name);
                         setTimeout(() => {
-                            document.getElementById('template-name').value = w.name;
-                            App.UI.showModal('template-modal');
+                            App.Templates.openNew(promptName, promptExercises);
                         }, 500);
                     }
 
@@ -956,25 +964,77 @@
                     }
                     list.innerHTML = App.data.templates.map(t => `
                         <div class="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 shadow-sm flex justify-between items-center group">
-                            <div>
+                            <div class="min-w-0">
                                 <h3 class="font-bold text-[15px]">${App.escapeHtml(t.name)}</h3>
                                 <p class="text-xs text-zinc-500 mt-1 line-clamp-1">${App.escapeHtml(t.exercises.join(', '))}</p>
                             </div>
-                            <button class="bg-blue-600 hover:bg-blue-700 text-white w-8 h-8 rounded-full flex items-center justify-center transition" onclick="App.Workout.start('${t.id}')"><i class="ph-bold ph-play"></i></button>
+                            <div class="flex items-center gap-2 shrink-0">
+                                <button class="text-zinc-400 hover:text-red-500 w-8 h-8 rounded-full flex items-center justify-center transition" onclick="App.Templates.delete('${t.id}')"><i class="ph ph-trash"></i></button>
+                                <button class="bg-blue-600 hover:bg-blue-700 text-white w-8 h-8 rounded-full flex items-center justify-center transition" onclick="App.Workout.start('${t.id}')"><i class="ph-bold ph-play"></i></button>
+                            </div>
                         </div>
                     `).join('');
                 },
+
+                // Opens the template modal. With no args, starts a blank template
+                // (from the Templates tab "New" button). Called with a name + exercise
+                // list right after finishing a workout, to offer saving it as a template.
+                openNew(prefillName = '', prefillExercises = []) {
+                    App.state.templateBuilder = [...prefillExercises];
+                    document.getElementById('template-name').value = prefillName;
+                    document.getElementById('template-modal-title').textContent = prefillExercises.length ? 'Save as Template' : 'New Template';
+                    this.renderBuilder();
+                    App.UI.showModal('template-modal');
+                },
+
+                openExercisePicker() {
+                    App.UI.showModal('exercise-modal', 'template');
+                },
+
+                addExercise(name) {
+                    App.state.templateBuilder.push(name);
+                    this.renderBuilder();
+                    App.UI.showModal('template-modal');
+                },
+
+                removeExercise(idx) {
+                    App.state.templateBuilder.splice(idx, 1);
+                    this.renderBuilder();
+                },
+
+                renderBuilder() {
+                    const list = document.getElementById('template-exercise-list');
+                    if (App.state.templateBuilder.length === 0) {
+                        list.innerHTML = `<div class="text-xs text-zinc-500 text-center py-3 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-lg">No exercises added yet.</div>`;
+                        return;
+                    }
+                    list.innerHTML = App.state.templateBuilder.map((name, idx) => `
+                        <div class="flex items-center justify-between bg-zinc-100 dark:bg-zinc-800 rounded-lg px-3 py-2 text-sm">
+                            <span class="truncate">${App.escapeHtml(name)}</span>
+                            <button onclick="App.Templates.removeExercise(${idx})" class="text-zinc-400 hover:text-red-500 shrink-0 ml-2"><i class="ph ph-x"></i></button>
+                        </div>
+                    `).join('');
+                },
+
                 save() {
                     const name = document.getElementById('template-name').value.trim() || 'New Template';
-                    const w = App.data.activeWorkout;
-                    if (w && w.exercises.length > 0) {
-                        const t = { id: App.generateId(), name: name, exercises: w.exercises.map(e => e.name) };
-                        w.templateId = t.id; // Link active workout
-                        App.data.templates.push(t);
-                        App.saveData();
-                        App.UI.closeModal();
-                        App.UI.showMessage("Success", "Template saved.");
+                    const exercises = App.state.templateBuilder;
+                    if (exercises.length === 0) {
+                        App.UI.showMessage("Add an exercise", "Add at least one exercise before saving the template.");
+                        return;
                     }
+                    const t = { id: App.generateId(), name: name, exercises: [...exercises] };
+                    App.data.templates.push(t);
+                    App.saveData();
+                    App.UI.closeModal();
+                    if (App.state.currentView === 'templates') this.render();
+                    App.UI.showMessage("Success", "Template saved.");
+                },
+
+                delete(id) {
+                    App.data.templates = App.data.templates.filter(t => t.id !== id);
+                    App.saveData();
+                    this.render();
                 }
             },
 
@@ -1168,12 +1228,13 @@
                 updateUnitLabels() {
                     document.querySelectorAll('.unit-label').forEach(el => el.textContent = App.data.settings.unit);
                 },
-                showModal(id) {
+                showModal(id, exercisePickerTarget = 'workout') {
                     document.getElementById('modal-container').classList.remove('hidden');
                     document.getElementById('modal-container').classList.add('flex');
                     document.querySelectorAll('.modal-content').forEach(el => el.classList.add('hidden'));
                     document.getElementById(id).classList.remove('hidden');
                     if (id === 'exercise-modal') {
+                        App.state.exercisePickerTarget = exercisePickerTarget;
                         document.getElementById('exercise-search').value = '';
                         this.filterExercises('');
                         document.getElementById('exercise-search').focus();
@@ -1182,6 +1243,15 @@
                 closeModal() {
                     document.getElementById('modal-container').classList.add('hidden');
                     document.getElementById('modal-container').classList.remove('flex');
+                },
+                closeExercisePicker() {
+                    // If we got here from the template builder, return to it instead
+                    // of closing everything, so in-progress template edits aren't lost.
+                    if (App.state.exercisePickerTarget === 'template') {
+                        this.showModal('template-modal');
+                    } else {
+                        this.closeModal();
+                    }
                 },
                 showMessage(title, body) {
                     document.getElementById('msg-title').textContent = title;
@@ -1196,11 +1266,16 @@
 
                     list.innerHTML = '';
 
+                    const pickExercise = (name) => {
+                        if (App.state.exercisePickerTarget === 'template') App.Templates.addExercise(name);
+                        else App.Workout.addExercise(name);
+                    };
+
                     if (q && !matches.find(m => m.toLowerCase() === q)) {
                         const btn = document.createElement('button');
                         btn.className = "w-full text-left p-3 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg mb-1 flex items-center gap-2";
                         btn.innerHTML = `<i class="ph ph-plus-circle"></i> Add Custom: "${App.escapeHtml(trimmed)}"`;
-                        btn.onclick = () => App.Workout.addExercise(trimmed);
+                        btn.onclick = () => pickExercise(trimmed);
                         list.appendChild(btn);
                     }
 
@@ -1208,7 +1283,7 @@
                         const btn = document.createElement('button');
                         btn.className = "w-full text-left p-3 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors border-b border-zinc-100 dark:border-zinc-800/50 last:border-0";
                         btn.textContent = ex;
-                        btn.onclick = () => App.Workout.addExercise(ex);
+                        btn.onclick = () => pickExercise(ex);
                         list.appendChild(btn);
                     });
 
