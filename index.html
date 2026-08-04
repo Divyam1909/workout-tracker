@@ -651,12 +651,10 @@
                             suggHtml = `<div class="text-[11px] text-blue-600 dark:text-blue-400 font-medium mb-2 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded inline-block"><i class="ph ph-trend-up"></i> Last: ${bestSet.weight}${App.data.settings.unit} × ${bestSet.reps} → Try ${suggW}${App.data.settings.unit} × ${suggR}-${bestSet.reps}</div>`;
                         }
 
-                        // PR Check
-                        let isPR = false;
-                        const prRec = App.data.prs[ex.name];
-                        ex.sets.forEach(s => {
-                            if (s.completed && (!prRec || App.calcE1RM(s.weight, s.reps) > prRec.e1rm)) isPR = true;
-                        });
+                        // PR Check -- isPR is decided once, in toggleSet, at the moment
+                        // a set is completed (App.data.prs is already updated by then,
+                        // so re-deriving it here would compare a PR against itself).
+                        const isPR = ex.sets.some(s => s.completed && s.isPR);
 
                         let setsHtml = '';
                         ex.sets.forEach((set, sIdx) => {
@@ -777,7 +775,8 @@
                 toggleSet(eId, sId, exName) {
                     const s = App.data.activeWorkout.exercises.find(e=>e.id===eId).sets.find(s=>s.id===sId);
                     s.completed = !s.completed;
-                    
+                    s.isPR = false;
+
                     if (s.completed) {
                         this.startRestTimer();
                         if (s.weight > 0 && s.reps > 0 && s.type !== 'W') {
@@ -785,6 +784,7 @@
                             const pr = App.data.prs[exName];
                             if (!pr || e1rm > pr.e1rm) {
                                 App.data.prs[exName] = { weight: s.weight, reps: s.reps, e1rm, date: Date.now() };
+                                s.isPR = true;
                             }
                         }
                     }
