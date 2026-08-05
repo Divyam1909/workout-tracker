@@ -280,7 +280,7 @@
                     <div class="flex flex-col items-end">
                         <div class="flex items-center">
                             <input type="number" id="workout-bw" class="bg-transparent border-b border-zinc-300 dark:border-zinc-700 w-16 text-right outline-none focus:border-zinc-500 font-medium" placeholder="--" oninput="App.Workout.updateBw(this.value)">
-                            <button id="bw-unit-btn" class="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 ml-1 text-xs font-medium px-1 rounded bg-zinc-100 dark:bg-zinc-800" onclick="App.Workout.toggleBwUnit()">kg</button>
+                            <div id="bw-unit-btn" class="flex bg-zinc-200 dark:bg-zinc-700 rounded p-0.5 text-[8px] font-bold tracking-wider uppercase ml-2 cursor-pointer shrink-0" onclick="App.Workout.toggleBwUnit()"></div>
                         </div>
                         <span id="bw-sec-unit" class="text-[10px] text-zinc-400 mt-0.5">--</span>
                     </div>
@@ -349,6 +349,14 @@
                 </button>
                 <button onclick="App.Templates.save()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg transition-colors">Save Template</button>
             </div>
+        </div>
+        
+        <!-- Confirm Modal -->
+        <div id="confirm-modal" class="hidden modal-content bg-white dark:bg-zinc-900 rounded-xl w-full max-w-sm flex flex-col shadow-2xl p-5 text-center">
+            <div id="confirm-icon" class="text-3xl mb-2 text-blue-500"><i class="ph-fill ph-question"></i></div>
+            <h3 id="confirm-title" class="font-bold text-lg mb-1">Confirm</h3>
+            <p id="confirm-body" class="text-sm text-zinc-500 mb-5">Are you sure?</p>
+            <div id="confirm-actions" class="flex flex-col gap-2"></div>
         </div>
         
         <!-- Generic Message Box -->
@@ -589,24 +597,34 @@
                         return;
                     }
 
-                    w.endTime = Date.now();
-                    App.data.workouts.push(w);
+                    App.UI.showConfirm("Finish Workout", "Do you want to save this workout?", [
+                        { text: "Save Workout", style: "bg-blue-600 hover:bg-blue-700 text-white", action: () => {
+                            w.endTime = Date.now();
+                            App.data.workouts.push(w);
 
-                    // Check for new Template save (capture exercise names now --
-                    // activeWorkout is cleared below, before the modal opens)
-                    if (!w.templateId && w.exercises.length > 0) {
-                        const promptName = w.name;
-                        const promptExercises = w.exercises.map(e => e.name);
-                        setTimeout(() => {
-                            App.Templates.openNew(promptName, promptExercises);
-                        }, 500);
-                    }
+                            if (!w.templateId && w.exercises.length > 0) {
+                                const promptName = w.name;
+                                const promptExercises = w.exercises.map(e => e.name);
+                                setTimeout(() => {
+                                    App.Templates.openNew(promptName, promptExercises);
+                                }, 500);
+                            }
 
-                    App.data.activeWorkout = null;
-                    this.stopTimer();
-                    this.stopRestTimer();
-                    App.saveData();
-                    App.switchView('dashboard');
+                            App.data.activeWorkout = null;
+                            App.Workout.stopTimer();
+                            App.Workout.stopRestTimer();
+                            App.saveData();
+                            App.switchView('dashboard');
+                        }},
+                        { text: "Discard", style: "bg-red-100 hover:bg-red-200 text-red-700 dark:bg-red-900/30 dark:hover:bg-red-900/50 dark:text-red-400", action: () => {
+                            App.data.activeWorkout = null;
+                            App.Workout.stopTimer();
+                            App.Workout.stopRestTimer();
+                            App.saveData();
+                            App.switchView('dashboard');
+                        }},
+                        { text: "Cancel", style: "bg-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200" }
+                    ]);
                 },
 
                 getBestSet(exName) {
@@ -630,7 +648,10 @@
                     document.getElementById('workout-bw').value = w.bodyweight;
                     document.getElementById('bw-sec-unit').textContent = App.getSecondaryUnitVal(w.bodyweight, w.bwUnit);
                     const bwBtn = document.getElementById('bw-unit-btn');
-                    if (bwBtn) bwBtn.textContent = w.bwUnit || App.data.settings.unit;
+                    if (bwBtn) {
+                        const bwU = w.bwUnit || App.data.settings.unit;
+                        bwBtn.innerHTML = `<span class="px-1 py-0.5 rounded ${bwU === 'kg' ? 'bg-white dark:bg-zinc-500 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-500'}">KG</span><span class="px-1 py-0.5 rounded ${bwU === 'lb' ? 'bg-white dark:bg-zinc-500 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-500'}">LB</span>`;
+                    }
 
                     const container = document.getElementById('workout-exercises');
                     container.innerHTML = '';
@@ -687,7 +708,10 @@
                                     <div class="flex flex-col items-center">
                                         <div class="flex items-center w-full bg-zinc-100 dark:bg-zinc-800 rounded focus-within:ring-1 focus-within:ring-zinc-400">
                                             <input type="number" step="0.5" class="w-full bg-transparent p-1.5 text-sm text-center outline-none font-medium" placeholder="0" value="${set.weight}" onchange="App.Workout.updateSet('${ex.id}', '${set.id}', 'weight', this.value)" oninput="document.getElementById('sec-${set.id}').textContent = App.getSecondaryUnitVal(this.value, '${set.unit || App.data.settings.unit}')">
-                                            <button class="text-[10px] font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 px-1" onclick="App.Workout.toggleSetUnit('${ex.id}', '${set.id}')">${set.unit || App.data.settings.unit}</button>
+                                            <div class="flex bg-zinc-200 dark:bg-zinc-700 rounded p-0.5 text-[8px] font-bold tracking-wider uppercase mr-1 cursor-pointer shrink-0" onclick="App.Workout.toggleSetUnit('${ex.id}', '${set.id}')">
+                                                <span class="px-1 py-0.5 rounded ${ (set.unit || App.data.settings.unit) === 'kg' ? 'bg-white dark:bg-zinc-500 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-500'}">KG</span>
+                                                <span class="px-1 py-0.5 rounded ${ (set.unit || App.data.settings.unit) === 'lb' ? 'bg-white dark:bg-zinc-500 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-500'}">LB</span>
+                                            </div>
                                         </div>
                                         <span id="sec-${set.id}" class="text-[9px] text-zinc-400 mt-0.5">${App.getSecondaryUnitVal(set.weight, set.unit)}</span>
                                     </div>
@@ -1237,9 +1261,13 @@
                     reader.readAsText(file);
                 },
                 clearData() {
-                    // Safe alternative to alert/confirm
-                    App.data = { workouts: [], templates: [], prs: {}, settings: { unit: 'kg', theme: 'system' }, activeWorkout: null };
-                    App.saveData(); App.init(); App.UI.showMessage("Cleared", "All data has been wiped.");
+                    App.UI.showConfirm("Wipe All Data", "Are you sure you want to delete all data? This cannot be undone.", [
+                        { text: "Delete Everything", style: "bg-red-600 hover:bg-red-700 text-white", action: () => {
+                            App.data = { workouts: [], templates: [], prs: {}, settings: { unit: 'kg', theme: 'system' }, activeWorkout: null };
+                            App.saveData(); App.init(); App.UI.showMessage("Cleared", "All data has been wiped.");
+                        }},
+                        { text: "Cancel", style: "bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100" }
+                    ]);
                 }
             },
 
@@ -1271,6 +1299,23 @@
                     } else {
                         this.closeModal();
                     }
+                },
+                showConfirm(title, body, actions) {
+                    document.getElementById('confirm-title').textContent = title;
+                    document.getElementById('confirm-body').textContent = body;
+                    const container = document.getElementById('confirm-actions');
+                    container.innerHTML = '';
+                    actions.forEach(act => {
+                        const btn = document.createElement('button');
+                        btn.className = `w-full font-medium py-2 rounded-lg transition-colors ${act.style || 'bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100'}`;
+                        btn.textContent = act.text;
+                        btn.onclick = () => {
+                            if (act.action) act.action();
+                            this.closeModal();
+                        };
+                        container.appendChild(btn);
+                    });
+                    this.showModal('confirm-modal');
                 },
                 showMessage(title, body) {
                     document.getElementById('msg-title').textContent = title;
