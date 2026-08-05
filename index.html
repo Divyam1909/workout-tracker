@@ -69,7 +69,7 @@
         }
     </style>
 </head>
-<body class="bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 h-screen flex flex-col md:flex-row overflow-hidden transition-colors">
+<body class="bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 fixed inset-0 flex flex-col md:flex-row overflow-hidden transition-colors">
 
     <nav class="hidden md:flex w-64 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 flex-col p-4 z-10">
         <div class="flex items-center gap-2 mb-8 px-2">
@@ -280,7 +280,7 @@
                     <div class="flex flex-col items-end">
                         <div class="flex items-center">
                             <input type="number" id="workout-bw" class="bg-transparent border-b border-zinc-300 dark:border-zinc-700 w-16 text-right outline-none focus:border-zinc-500 font-medium" placeholder="--" oninput="App.Workout.updateBw(this.value)">
-                            <span class="text-zinc-500 unit-label ml-1 text-xs"></span>
+                            <button id="bw-unit-btn" class="text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 ml-1 text-xs font-medium px-1 rounded bg-zinc-100 dark:bg-zinc-800" onclick="App.Workout.toggleBwUnit()">kg</button>
                         </div>
                         <span id="bw-sec-unit" class="text-[10px] text-zinc-400 mt-0.5">--</span>
                     </div>
@@ -477,17 +477,21 @@
                 document.documentElement.classList.toggle('dark', isDark);
             },
             
-            getSecondaryUnitVal(val) {
+            getSecondaryUnitVal(val, unitOverride) {
                 if (!val) return '--';
                 const v = parseFloat(val);
                 if (isNaN(v)) return '--';
-                const isKg = this.data.settings.unit === 'kg';
+                const activeUnit = unitOverride || this.data.settings.unit;
+                const isKg = activeUnit === 'kg';
                 return isKg ? `${(v * 2.20462).toFixed(1)} lbs` : `${(v / 2.20462).toFixed(1)} kg`;
             },
             
-            calcE1RM(weight, reps) {
+            calcE1RM(weight, reps, unitOverride) {
                 if (!weight || !reps) return 0;
-                return parseFloat(weight) * (1 + parseInt(reps)/30);
+                let w = parseFloat(weight);
+                const activeUnit = unitOverride || this.data.settings.unit;
+                if (activeUnit === 'lb') w = w / 2.20462;
+                return w * (1 + parseInt(reps)/30);
             },
 
             switchView(viewId) {
@@ -610,7 +614,7 @@
                     for(let w of past) {
                         const found = w.exercises.find(e => e.name === exName);
                         if(found && found.sets.length > 0) {
-                            const best = found.sets.filter(s=>s.completed).sort((a,b) => App.calcE1RM(b.weight, b.reps) - App.calcE1RM(a.weight, a.reps))[0];
+                            const best = found.sets.filter(s=>s.completed).sort((a,b) => App.calcE1RM(b.weight, b.reps, b.unit) - App.calcE1RM(a.weight, a.reps, a.unit))[0];
                             if(best) return best;
                         }
                     }
@@ -624,7 +628,9 @@
                     document.getElementById('workout-name-input').value = w.name;
                     document.getElementById('workout-notes').value = w.notes;
                     document.getElementById('workout-bw').value = w.bodyweight;
-                    document.getElementById('bw-sec-unit').textContent = App.getSecondaryUnitVal(w.bodyweight);
+                    document.getElementById('bw-sec-unit').textContent = App.getSecondaryUnitVal(w.bodyweight, w.bwUnit);
+                    const bwBtn = document.getElementById('bw-unit-btn');
+                    if (bwBtn) bwBtn.textContent = w.bwUnit || App.data.settings.unit;
 
                     const container = document.getElementById('workout-exercises');
                     container.innerHTML = '';
@@ -679,8 +685,11 @@
                                     </div>
                                     
                                     <div class="flex flex-col items-center">
-                                        <input type="number" step="0.5" class="w-full bg-zinc-100 dark:bg-zinc-800 rounded p-1.5 text-sm text-center outline-none focus:ring-1 focus:ring-zinc-400 font-medium" placeholder="0" value="${set.weight}" onchange="App.Workout.updateSet('${ex.id}', '${set.id}', 'weight', this.value)" oninput="document.getElementById('sec-${set.id}').textContent = App.getSecondaryUnitVal(this.value)">
-                                        <span id="sec-${set.id}" class="text-[9px] text-zinc-400 mt-0.5">${App.getSecondaryUnitVal(set.weight)}</span>
+                                        <div class="flex items-center w-full bg-zinc-100 dark:bg-zinc-800 rounded focus-within:ring-1 focus-within:ring-zinc-400">
+                                            <input type="number" step="0.5" class="w-full bg-transparent p-1.5 text-sm text-center outline-none font-medium" placeholder="0" value="${set.weight}" onchange="App.Workout.updateSet('${ex.id}', '${set.id}', 'weight', this.value)" oninput="document.getElementById('sec-${set.id}').textContent = App.getSecondaryUnitVal(this.value, '${set.unit || App.data.settings.unit}')">
+                                            <button class="text-[10px] font-medium text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 px-1" onclick="App.Workout.toggleSetUnit('${ex.id}', '${set.id}')">${set.unit || App.data.settings.unit}</button>
+                                        </div>
+                                        <span id="sec-${set.id}" class="text-[9px] text-zinc-400 mt-0.5">${App.getSecondaryUnitVal(set.weight, set.unit)}</span>
                                     </div>
                                     
                                     <div class="flex flex-col items-center h-full justify-start">
@@ -738,7 +747,17 @@
                 },
 
                 /* Set & Exercise Mutations */
-                updateBw(val) { App.data.activeWorkout.bodyweight = val; document.getElementById('bw-sec-unit').textContent = App.getSecondaryUnitVal(val); App.debouncedSave(); },
+                updateBw(val) { App.data.activeWorkout.bodyweight = val; document.getElementById('bw-sec-unit').textContent = App.getSecondaryUnitVal(val, App.data.activeWorkout.bwUnit); App.debouncedSave(); },
+                toggleBwUnit() {
+                    const w = App.data.activeWorkout;
+                    w.bwUnit = (w.bwUnit || App.data.settings.unit) === 'kg' ? 'lb' : 'kg';
+                    App.saveData(); this.renderActive();
+                },
+                toggleSetUnit(eId, sId) {
+                    const s = App.data.activeWorkout.exercises.find(e=>e.id===eId).sets.find(s=>s.id===sId);
+                    s.unit = (s.unit || App.data.settings.unit) === 'kg' ? 'lb' : 'kg';
+                    App.saveData(); this.renderActive();
+                },
                 updNotes(eId, val) { App.data.activeWorkout.exercises.find(e=>e.id===eId).notes = val; App.saveData(); },
                 addSet(eId) {
                     const ex = App.data.activeWorkout.exercises.find(e=>e.id===eId);
@@ -780,10 +799,10 @@
                     if (s.completed) {
                         this.startRestTimer();
                         if (s.weight > 0 && s.reps > 0 && s.type !== 'W') {
-                            const e1rm = App.calcE1RM(s.weight, s.reps);
+                            const e1rm = App.calcE1RM(s.weight, s.reps, s.unit);
                             const pr = App.data.prs[exName];
                             if (!pr || e1rm > pr.e1rm) {
-                                App.data.prs[exName] = { weight: s.weight, reps: s.reps, e1rm, date: Date.now() };
+                                App.data.prs[exName] = { weight: s.weight, reps: s.reps, unit: s.unit || App.data.settings.unit, e1rm, date: Date.now() };
                                 s.isPR = true;
                             }
                         }
