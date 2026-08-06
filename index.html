@@ -253,6 +253,7 @@
                     <input type="text" id="workout-name-input" class="bg-transparent font-bold text-lg outline-none placeholder-zinc-400" placeholder="Workout Name">
                     <div class="flex items-center gap-2 text-xs text-zinc-500 font-mono">
                         <i class="ph ph-clock"></i> <span id="workout-timer">00:00</span>
+                        <input type="date" id="workout-date-input" class="bg-transparent outline-none text-zinc-500 text-[10px] ml-2 cursor-pointer" onchange="App.Workout.updateDate(this.value)">
                     </div>
                 </div>
                 <button onclick="App.Workout.finish()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-md text-sm font-semibold transition-colors shadow-sm">Finish</button>
@@ -504,7 +505,18 @@
 
             switchView(viewId) {
                 if (viewId !== 'workout' && this.data.activeWorkout) {
-                    this.UI.showMessage("Workout in Progress", "Please finish or discard your current workout first.");
+                    this.UI.showConfirm("Workout in Progress", "You have an active workout. Do you want to finish it, discard it, or go back to it?", [
+                        { text: "Go to Workout", style: "bg-blue-600 hover:bg-blue-700 text-white", action: () => { App.switchView('workout'); } },
+                        { text: "Finish & Save", style: "bg-green-600 hover:bg-green-700 text-white", action: () => { App.Workout.finish(); } },
+                        { text: "Discard", style: "bg-red-100 hover:bg-red-200 text-red-700 dark:bg-red-900/30 dark:hover:bg-red-900/50 dark:text-red-400", action: () => { 
+                            App.data.activeWorkout = null; 
+                            App.Workout.stopTimer();
+                            App.Workout.stopRestTimer();
+                            App.saveData(); 
+                            App.switchView(viewId); 
+                        }},
+                        { text: "Cancel", style: "bg-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200" }
+                    ]);
                     return;
                 }
                 
@@ -599,7 +611,12 @@
 
                     App.UI.showConfirm("Finish Workout", "Do you want to save this workout?", [
                         { text: "Save Workout", style: "bg-blue-600 hover:bg-blue-700 text-white", action: () => {
-                            w.endTime = Date.now();
+                            const now = Date.now();
+                            if (w.startTime < now - 24 * 60 * 60 * 1000) {
+                                w.endTime = w.startTime + 60 * 60 * 1000;
+                            } else {
+                                w.endTime = now;
+                            }
                             App.data.workouts.push(w);
 
                             if (!w.templateId && w.exercises.length > 0) {
@@ -627,6 +644,15 @@
                     ]);
                 },
 
+                updateDate(val) {
+                    if (!val || !App.data.activeWorkout) return;
+                    const [y, m, d] = val.split('-');
+                    const date = new Date(App.data.activeWorkout.startTime);
+                    date.setFullYear(y, m - 1, d);
+                    App.data.activeWorkout.startTime = date.getTime();
+                    App.saveData();
+                },
+
                 getBestSet(exName) {
                     const past = App.data.workouts.sort((a,b) => b.endTime - a.endTime);
                     for(let w of past) {
@@ -645,6 +671,11 @@
 
                     document.getElementById('workout-name-input').value = w.name;
                     document.getElementById('workout-notes').value = w.notes;
+                    
+                    const d = new Date(w.startTime);
+                    const dateString = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                    document.getElementById('workout-date-input').value = dateString;
+
                     document.getElementById('workout-bw').value = w.bodyweight;
                     document.getElementById('bw-sec-unit').textContent = App.getSecondaryUnitVal(w.bodyweight, w.bwUnit);
                     const bwBtn = document.getElementById('bw-unit-btn');
@@ -661,9 +692,8 @@
                         exEl.className = "flex flex-col gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 shadow-sm";
                         
                         // Drag handlers
-                        exEl.draggable = true;
                         exEl.ondragstart = (e) => App.Workout.dragStart(e, exIndex);
-                        exEl.ondragend = (e) => App.Workout.dragEnd(e);
+                        exEl.ondragend = (e) => { e.currentTarget.draggable = false; App.Workout.dragEnd(e); };
                         exEl.ondragover = (e) => App.Workout.dragOver(e, exIndex);
                         exEl.ondragleave = (e) => App.Workout.dragLeave(e);
                         exEl.ondrop = (e) => App.Workout.drop(e, exIndex);
@@ -694,7 +724,7 @@
                             if (set.type === 'D') { tChar = 'D'; tColor = 'text-red-600 bg-red-100 dark:bg-red-900/40'; }
 
                             setsHtml += `
-                                <div class="grid grid-cols-[32px_1fr_64px_64px_36px] items-center gap-2 py-2 px-1 rounded-md ${bg} transition-colors group">
+                                <div class="grid grid-cols-[32px_1fr_80px_80px_36px] items-center gap-2 py-2 px-1 rounded-md ${bg} transition-colors group">
                                     <button class="w-7 h-7 flex items-center justify-center rounded set-type-btn ${tColor}" onclick="App.Workout.cycleType('${ex.id}', '${set.id}')">${tChar}</button>
                                     
                                     <div class="flex flex-col">
@@ -706,8 +736,8 @@
                                     </div>
                                     
                                     <div class="flex flex-col items-center">
-                                        <div class="flex items-center w-full bg-zinc-100 dark:bg-zinc-800 rounded focus-within:ring-1 focus-within:ring-zinc-400">
-                                            <input type="number" step="0.5" class="w-full bg-transparent p-1.5 text-sm text-center outline-none font-medium" placeholder="0" value="${set.weight}" onchange="App.Workout.updateSet('${ex.id}', '${set.id}', 'weight', this.value)" oninput="document.getElementById('sec-${set.id}').textContent = App.getSecondaryUnitVal(this.value, '${set.unit || App.data.settings.unit}')">
+                                        <div class="flex items-center w-full bg-zinc-100 dark:bg-zinc-800 rounded focus-within:ring-2 focus-within:ring-zinc-400">
+                                            <input type="number" step="0.5" class="w-full bg-transparent p-2 text-base text-center outline-none font-semibold" placeholder="0" value="${set.weight}" onchange="App.Workout.updateSet('${ex.id}', '${set.id}', 'weight', this.value)" oninput="document.getElementById('sec-${set.id}').textContent = App.getSecondaryUnitVal(this.value, '${set.unit || App.data.settings.unit}')">
                                             <div class="flex bg-zinc-200 dark:bg-zinc-700 rounded p-0.5 text-[8px] font-bold tracking-wider uppercase mr-1 cursor-pointer shrink-0" onclick="App.Workout.toggleSetUnit('${ex.id}', '${set.id}')">
                                                 <span class="px-1 py-0.5 rounded ${ (set.unit || App.data.settings.unit) === 'kg' ? 'bg-white dark:bg-zinc-500 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-500'}">KG</span>
                                                 <span class="px-1 py-0.5 rounded ${ (set.unit || App.data.settings.unit) === 'lb' ? 'bg-white dark:bg-zinc-500 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-500'}">LB</span>
@@ -717,7 +747,7 @@
                                     </div>
                                     
                                     <div class="flex flex-col items-center h-full justify-start">
-                                        <input type="number" class="w-full bg-zinc-100 dark:bg-zinc-800 rounded p-1.5 text-sm text-center outline-none focus:ring-1 focus:ring-zinc-400 font-medium" placeholder="0" value="${set.reps}" onchange="App.Workout.updateSet('${ex.id}', '${set.id}', 'reps', this.value)">
+                                        <input type="number" class="w-full bg-zinc-100 dark:bg-zinc-800 rounded p-2 text-base text-center outline-none focus:ring-2 focus:ring-zinc-400 font-semibold" placeholder="0" value="${set.reps}" onchange="App.Workout.updateSet('${ex.id}', '${set.id}', 'reps', this.value)">
                                     </div>
                                     
                                     <div class="flex justify-end h-full items-start pt-1">
@@ -731,7 +761,7 @@
 
                         exEl.innerHTML = `
                             <div class="flex justify-between items-center mb-1">
-                                <div class="flex items-center gap-2 drag-handle w-full py-1">
+                                <div class="flex items-center gap-2 drag-handle w-full py-1" onmousedown="this.closest('.flex-col').draggable=true" ontouchstart="this.closest('.flex-col').draggable=true" ontouchend="this.closest('.flex-col').draggable=false">
                                     <i class="ph ph-dots-six-vertical text-zinc-400 text-lg"></i>
                                     <h3 class="font-semibold text-sm">${App.escapeHtml(ex.name)}</h3>
                                     ${isPR ? '<span class="pr-badge bg-yellow-400 text-yellow-900 text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase ml-1"><i class="ph-fill ph-trophy"></i> PR</span>' : ''}
@@ -744,7 +774,7 @@
                             </div>
                             <div class="px-7">${suggHtml}</div>
 
-                            <div class="grid grid-cols-[32px_1fr_64px_64px_36px] gap-2 px-1 text-[10px] uppercase font-semibold tracking-wider text-zinc-400 mt-1">
+                            <div class="grid grid-cols-[32px_1fr_80px_80px_36px] gap-2 px-1 text-[10px] uppercase font-semibold tracking-wider text-zinc-400 mt-1">
                                 <div class="text-center">Set</div>
                                 <div>Previous</div>
                                 <div class="text-center unit-label">${App.data.settings.unit}</div>
@@ -920,16 +950,39 @@
                     this.renderCharts();
                 },
                 renderCharts() {
-                    const wSorted = [...App.data.workouts].sort((a,b) => a.startTime - b.startTime).slice(-10); // Last 10
-                    const labels = wSorted.map(w => new Date(w.startTime).toLocaleDateString(undefined, {month:'short', day:'numeric'}));
+                    const now = new Date();
+                    now.setHours(0, 0, 0, 0);
                     
-                    const volData = wSorted.map(work => {
+                    const labels = [];
+                    const volData = [];
+                    const bwData = [];
+                    
+                    // Generate last 14 days
+                    for (let i = 13; i >= 0; i--) {
+                        const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+                        labels.push(d.toLocaleDateString(undefined, {month:'short', day:'numeric'}));
+                        
+                        // Find workouts on this day
+                        const dayWorkouts = App.data.workouts.filter(w => {
+                            const wd = new Date(w.startTime);
+                            return wd.getFullYear() === d.getFullYear() && wd.getMonth() === d.getMonth() && wd.getDate() === d.getDate();
+                        });
+                        
                         let v = 0;
-                        work.exercises.forEach(ex => ex.sets.forEach(s => { if(s.completed) v += (s.weight * s.reps); }));
-                        return v;
-                    });
-                    
-                    const bwData = wSorted.map(work => parseFloat(work.bodyweight) || null);
+                        let maxBw = null;
+                        
+                        dayWorkouts.forEach(work => {
+                            work.exercises.forEach(ex => ex.sets.forEach(s => {
+                                if(s.completed && s.weight && s.reps) v += (parseFloat(s.weight) * parseInt(s.reps));
+                            }));
+                            if (work.bodyweight && !isNaN(parseFloat(work.bodyweight))) {
+                                maxBw = parseFloat(work.bodyweight);
+                            }
+                        });
+                        
+                        volData.push(v);
+                        bwData.push(maxBw);
+                    }
 
                     const chartConfig = {
                         type: 'line',
@@ -965,7 +1018,9 @@
                     list.innerHTML = sorted.map(w => {
                         const date = new Date(w.startTime).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
                         let exSummary = w.exercises.map(e => {
-                            const maxW = Math.max(0, ...e.sets.filter(s=>s.completed).map(s=>parseFloat(s.weight)||0));
+                            const weights = e.sets.filter(s=>s.completed).map(s=>parseFloat(s.weight));
+                            const validWeights = weights.filter(weight => !isNaN(weight));
+                            const maxW = validWeights.length > 0 ? Math.max(...validWeights) : 0;
                             return `<span class="text-xs text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded whitespace-nowrap">${App.escapeHtml(e.name)} ${maxW>0 ? `(${maxW}${App.data.settings.unit})` : ''}</span>`;
                         }).join(' ');
 
