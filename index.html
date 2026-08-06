@@ -328,8 +328,8 @@
             <i class="ph ph-chart-line-up text-xl mb-1"></i><span class="text-[10px] font-medium">Progress</span>
         </button>
         <div class="relative -top-5">
-            <button onclick="App.Workout.start()" aria-label="Start Workout" class="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-lg border-4 border-white dark:border-zinc-950 text-xl hover:bg-blue-700 transition-colors">
-                <i class="ph-bold ph-plus"></i>
+            <button onclick="App.Workout.start()" aria-label="Start Workout" class="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white shadow-lg border-4 border-white dark:border-zinc-950 hover:bg-blue-700 transition-colors">
+                <i class="ph-bold ph-plus text-xl leading-none"></i>
             </button>
         </div>
         <button onclick="App.switchView('history')" class="nav-item flex flex-col items-center p-2 rounded-lg text-zinc-500" data-view="history">
@@ -685,7 +685,10 @@
                     App.UI.showConfirm("Finish Workout", "Do you want to save this workout?", [
                         { text: "Save Workout", style: "bg-blue-600 hover:bg-blue-700 text-white", action: () => {
                             const now = Date.now();
-                            if (w.startTime < now - 24 * 60 * 60 * 1000) {
+                            if (this.isBackdated(w.startTime)) {
+                                // Can't know the true duration of a session logged
+                                // after the fact -- use a flat placeholder instead
+                                // of whatever elapsed since the picked date began.
                                 w.endTime = w.startTime + 60 * 60 * 1000;
                             } else {
                                 w.endTime = now;
@@ -724,6 +727,7 @@
                     date.setFullYear(y, m - 1, d);
                     App.data.activeWorkout.startTime = date.getTime();
                     App.saveData();
+                    this.resumeTimer();
                 },
 
                 getBestSet(exName) {
@@ -768,7 +772,7 @@
 
                     const unitChip = (activeUnit) => {
                         const chip = document.createElement('div');
-                        chip.className = "flex bg-zinc-200 dark:bg-zinc-700 rounded p-1 text-[8px] font-bold tracking-wider uppercase mr-1 cursor-pointer shrink-0";
+                        chip.className = "flex bg-zinc-200 dark:bg-zinc-700 rounded p-1 text-[8px] font-bold tracking-wider uppercase cursor-pointer shrink-0 mt-1";
                         chip.innerHTML = `<span class="px-1.5 py-1 rounded ${activeUnit === 'kg' ? 'bg-white dark:bg-zinc-500 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-500'}">KG</span><span class="px-1.5 py-1 rounded ${activeUnit === 'lb' ? 'bg-white dark:bg-zinc-500 shadow-sm text-zinc-900 dark:text-zinc-100' : 'text-zinc-500'}">LB</span>`;
                         return chip;
                     };
@@ -866,15 +870,18 @@
                             const row = document.createElement('div');
                             row.className = `grid grid-cols-[36px_1fr_80px_80px_40px] items-center gap-2 py-2 px-1 rounded-md ${bg} transition-colors group`;
 
+                            const typeCol = document.createElement('div');
+                            typeCol.className = "flex h-full items-start pt-1";
                             const typeBtn = document.createElement('button');
                             typeBtn.className = `w-9 h-9 flex items-center justify-center rounded set-type-btn ${tColor}`;
                             typeBtn.textContent = tChar;
                             typeBtn.setAttribute('aria-label', 'Set type: ' + (set.type === 'W' ? 'Warm-up' : set.type === 'D' ? 'Drop set' : 'Normal') + ' (tap to change)');
                             typeBtn.onclick = () => this.cycleType(ex.id, set.id);
-                            row.appendChild(typeBtn);
+                            typeCol.appendChild(typeBtn);
+                            row.appendChild(typeCol);
 
                             const prevCol = document.createElement('div');
-                            prevCol.className = "flex flex-col";
+                            prevCol.className = "flex flex-col h-full items-start justify-start";
                             const prevSpan = document.createElement('span');
                             prevSpan.className = "text-[11px] text-zinc-500 font-mono truncate";
                             prevSpan.textContent = set.prevStr || '-';
@@ -896,6 +903,10 @@
                             prevCol.appendChild(actionsRow);
                             row.appendChild(prevCol);
 
+                            // Stacked (input, then unit toggle, then the converted
+                            // secondary value) rather than side-by-side -- packing
+                            // the KG/LB chip into the same row as the number input
+                            // left too little room and clipped the typed digits.
                             const weightCol = document.createElement('div');
                             weightCol.className = "flex flex-col items-center";
                             const weightInputWrap = document.createElement('div');
@@ -916,8 +927,8 @@
                             const chip = unitChip(setUnit);
                             chip.onclick = () => this.toggleSetUnit(ex.id, set.id);
                             weightInputWrap.appendChild(weightInput);
-                            weightInputWrap.appendChild(chip);
                             weightCol.appendChild(weightInputWrap);
+                            weightCol.appendChild(chip);
                             weightCol.appendChild(secSpan);
                             row.appendChild(weightCol);
 
@@ -1107,10 +1118,26 @@
                     if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
                     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
                 },
+                // True when startTime falls on an earlier calendar day than today --
+                // i.e. the user picked a past date to log a session after the fact,
+                // as opposed to a workout actually in progress right now.
+                isBackdated(startTime) {
+                    const d = new Date(startTime); d.setHours(0, 0, 0, 0);
+                    const today = new Date(); today.setHours(0, 0, 0, 0);
+                    return d.getTime() < today.getTime();
+                },
                 startTimer() { this.resumeTimer(); },
                 resumeTimer() {
                     if (App.state.timerInterval) clearInterval(App.state.timerInterval);
                     const el = document.getElementById('workout-timer');
+                    const w = App.data.activeWorkout;
+                    if (w && this.isBackdated(w.startTime)) {
+                        // A live-ticking stopwatch makes no sense for a session
+                        // you're logging after the fact -- it would just count
+                        // up from whenever that past date began.
+                        el.textContent = '--:--';
+                        return;
+                    }
                     App.state.timerInterval = setInterval(() => {
                         if(App.data.activeWorkout) el.textContent = this.formatTime(Date.now() - App.data.activeWorkout.startTime);
                     }, 1000);
